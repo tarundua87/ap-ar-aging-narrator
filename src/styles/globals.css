@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500&display=swap');
+
+:root {
+  --ink: #0f1117;
+  --paper: #f7f5f0;
+  --accent: #c8401a;
+  --muted: #6b6b6b;
+  --border: #e2ddd6;
+  --success: #1a7a4a;
+  --warning: #b87d00;
+  --danger: #c8401a;
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: 'DM Sans', sans-serif;
+}
+
+h1, h2, h3 {
+  font-family: 'Playfair Display', serif;
+}
+
+.aging-critical { color: var(--danger); }
+.aging-warning  { color: var(--warning); }
+.aging-ok       { color: var(--success); }

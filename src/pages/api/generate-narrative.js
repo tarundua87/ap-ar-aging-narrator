@@ -62,5 +62,6 @@ Instructions:
 4. Draft a short follow-up email the client can send to their overdue customers (keep it professional and firm but polite — US business tone).
 5. Keep the entire narrative under 300 words.
 
-Format with clear sections: ASSESSMENT, KEY CONCERNS, RECOMMENDED ACTIONS, DRAFT FOLLOW-UP EMAIL.`
+Format with clear sections: ASSESSMENT, KEY CONCERNS, RECOMMENDED ACTIONS, DRAFT FOLLOW-UP EMAIL.
+Do not use any markdown formatting like ** or ## in your response. Use plain text only.`
 }

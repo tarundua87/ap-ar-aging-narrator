@@ -58,7 +58,7 @@ function NarrativeText({ text }) {
       {parts.map((part, i) => part.type === 'section' ? (
         <div key={i}>
           <h4 className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--accent)' }}>{part.label}</h4>
-          <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>{part.content.trim()}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: part.content.trim().replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>') }} />
         </div>
       ) : (
         <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap">{part.content.trim()}</p>

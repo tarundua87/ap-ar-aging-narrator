@@ -1,32 +1,27 @@
 import { useState } from 'react'
 import Head from 'next/head'
 import UploadPanel from '../components/UploadPanel'
-import TriageQueue from '../components/TriageQueue'
+import VendorTriage from '../components/VendorTriage'
+import ClientSummary from '../components/ClientSummary'
 import NarrativePanel from '../components/NarrativePanel'
 import Header from '../components/Header'
 
 export default function Dashboard() {
-  const [clients, setClients] = useState([])
-  const [selectedClient, setSelectedClient] = useState(null)
+  const [clientName, setClientName] = useState('')
+  const [vendors, setVendors] = useState([])
+  const [aggregate, setAggregate] = useState(null)
+  const [selectedVendor, setSelectedVendor] = useState(null)
   const [narrative, setNarrative] = useState(null)
   const [loadingNarrative, setLoadingNarrative] = useState(false)
 
-  const handleDataLoaded = (parsedClients) => {
-    setClients(parsedClients)
-    setSelectedClient(null)
-    setNarrative(null)
-  }
-
-  const handleSelectClient = async (client) => {
-    setSelectedClient(client)
-    setNarrative(null)
+  const generateClientNarrative = async (name, vendorList, agg) => {
     setLoadingNarrative(true)
-
+    setNarrative(null)
     try {
       const res = await fetch('/api/generate-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client }),
+        body: JSON.stringify({ mode: 'client', clientName: name, vendors: vendorList, aggregate: agg }),
       })
       const data = await res.json()
       setNarrative(data.narrative)
@@ -35,6 +30,46 @@ export default function Dashboard() {
     } finally {
       setLoadingNarrative(false)
     }
+  }
+
+  const handleDataLoaded = ({ clientName, vendors, aggregate }) => {
+    setClientName(clientName)
+    setVendors(vendors)
+    setAggregate(aggregate)
+    setSelectedVendor(null)
+    generateClientNarrative(clientName, vendors, aggregate)
+  }
+
+  const handleSelectVendor = async (vendor) => {
+    setSelectedVendor(vendor)
+    setNarrative(null)
+    setLoadingNarrative(true)
+    try {
+      const res = await fetch('/api/generate-narrative', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'vendor', clientName, vendor }),
+      })
+      const data = await res.json()
+      setNarrative(data.narrative)
+    } catch (err) {
+      setNarrative('Error generating narrative.')
+    } finally {
+      setLoadingNarrative(false)
+    }
+  }
+
+  const handleBackToClient = () => {
+    setSelectedVendor(null)
+    generateClientNarrative(clientName, vendors, aggregate)
+  }
+
+  const handleReset = () => {
+    setClientName('')
+    setVendors([])
+    setAggregate(null)
+    setSelectedVendor(null)
+    setNarrative(null)
   }
 
   return (
@@ -48,26 +83,31 @@ export default function Dashboard() {
         <Header />
 
         <main className="max-w-7xl mx-auto px-6 py-8">
-          {clients.length === 0 ? (
+          {vendors.length === 0 ? (
             <UploadPanel onDataLoaded={handleDataLoaded} />
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1">
-                <TriageQueue
-                  clients={clients}
-                  selectedClient={selectedClient}
-                  onSelectClient={handleSelectClient}
-                  onReset={() => { setClients([]); setSelectedClient(null); setNarrative(null) }}
-                />
+            <>
+              <ClientSummary clientName={clientName} aggregate={aggregate} onReset={handleReset} />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+                <div className="lg:col-span-1">
+                  <VendorTriage
+                    vendors={vendors}
+                    selectedVendor={selectedVendor}
+                    onSelectVendor={handleSelectVendor}
+                    onBackToClient={handleBackToClient}
+                  />
+                </div>
+                <div className="lg:col-span-2">
+                  <NarrativePanel
+                    clientName={clientName}
+                    vendor={selectedVendor}
+                    aggregate={aggregate}
+                    narrative={narrative}
+                    loading={loadingNarrative}
+                  />
+                </div>
               </div>
-              <div className="lg:col-span-2">
-                <NarrativePanel
-                  client={selectedClient}
-                  narrative={narrative}
-                  loading={loadingNarrative}
-                />
-              </div>
-            </div>
+            </>
           )}
         </main>
       </div>

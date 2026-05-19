@@ -11,11 +11,12 @@ import {
   saveReport, saveVendorNarrative, saveClientNarrative,
   deleteClient, deleteReport,
 } from '../lib/storage'
-import { exportReportPDF } from '../lib/exportPDF'
-import { exportReportWord } from '../lib/exportWord'
+import { exportReportPDF, exportVendorPDF } from '../lib/exportPDF'
+import { exportReportWord, exportVendorWord } from '../lib/exportWord'
 
 const VIEW_LIBRARY = 'library'
 const VIEW_UPLOAD = 'upload'
+const VIEW_UPLOAD_SCOPED = 'upload_scoped'
 const VIEW_REPORT = 'report'
 
 export default function Dashboard() {
@@ -37,6 +38,10 @@ export default function Dashboard() {
 
   // Client narrative loading (for refresh)
   const [loadingClient, setLoadingClient] = useState(false)
+
+  // Export preparation state
+  const [exportPreparing, setExportPreparing] = useState(false)
+  const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 })
 
   // Initial load
   useEffect(() => {
@@ -60,8 +65,23 @@ export default function Dashboard() {
     setView(VIEW_REPORT)
   }
 
+  const handleOpenPeriod = (slug, reportId) => {
+    const report = getReport(slug, reportId)
+    if (!report) return
+    setActiveSlug(slug)
+    setActiveReportId(reportId)
+    setActiveReport(report)
+    setSelectedVendor(null)
+    setVendorNarrative(null)
+    setView(VIEW_REPORT)
+  }
+
   const handleNewUpload = () => {
     setView(VIEW_UPLOAD)
+  }
+
+  const handleUploadNewPeriod = () => {
+    setView(VIEW_UPLOAD_SCOPED)
   }
 
   const handleDeleteClient = (slug) => {
@@ -72,10 +92,8 @@ export default function Dashboard() {
   // ── Upload action ────────────────────────────────
 
   const handleDataLoaded = async (parsedResult) => {
-    // parsedResult = { clientName, asOfDate, vendors, aggregate, invoiceCount }
     const { clientName, asOfDate, vendors, aggregate, invoiceCount } = parsedResult
 
-    // Save initial record (no narrative yet)
     const saveResult = saveReport({
       clientName,
       asOfDate,
@@ -83,7 +101,6 @@ export default function Dashboard() {
       clientNarrative: null,
     })
 
-    // Open report immediately so user sees data
     const justSaved = getReport(saveResult.slug, saveResult.reportId)
     setActiveSlug(saveResult.slug)
     setActiveReportId(saveResult.reportId)
@@ -93,7 +110,6 @@ export default function Dashboard() {
     setView(VIEW_REPORT)
     refreshLibrary()
 
-    // Generate client narrative in background
     generateClientNarrative(saveResult.slug, saveResult.reportId, clientName, vendors, aggregate)
   }
 
@@ -110,7 +126,6 @@ export default function Dashboard() {
       const data = await res.json()
       const narrative = data.narrative || 'Error generating narrative.'
       saveClientNarrative(slug, reportId, narrative)
-      // Refresh the active report
       setActiveReport(getReport(slug, reportId))
     } catch (err) {
       console.error(err)
@@ -126,7 +141,7 @@ export default function Dashboard() {
       const res = await fetch('/api/generate-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'vendor', clientName: activeReport.parsedData.aggregate ? activeSlug : '', vendor }),
+        body: JSON.stringify({ mode: 'vendor', clientName: activeSlug, vendor }),
       })
       const data = await res.json()
       const narrative = data.narrative || 'Error generating narrative.'
@@ -140,11 +155,54 @@ export default function Dashboard() {
     }
   }
 
+  // Silent vendor narrative for batch export prep
+  const generateVendorNarrativeSilent = async (vendor) => {
+    try {
+      const res = await fetch('/api/generate-narrative', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'vendor', clientName: activeSlug, vendor }),
+      })
+      const data = await res.json()
+      return { vendorName: vendor.name, narrative: data.narrative || 'No narrative generated.' }
+    } catch (err) {
+      return { vendorName: vendor.name, narrative: 'Error generating narrative.' }
+    }
+  }
+
+  const ensureAllVendorNarratives = async () => {
+    if (!activeReport) return {}
+    const allVendors = activeReport.parsedData.vendors
+    const existing = activeReport.vendorNarratives || {}
+    const missing = allVendors.filter(v => !existing[v.name])
+
+    if (missing.length === 0) return existing
+
+    setExportPreparing(true)
+    setExportProgress({ done: 0, total: missing.length })
+
+    await Promise.all(
+      missing.map(vendor =>
+        generateVendorNarrativeSilent(vendor).then(result => {
+          saveVendorNarrative(activeSlug, activeReportId, result.vendorName, result.narrative)
+          setExportProgress(prev => ({ done: prev.done + 1, total: prev.total }))
+          return result
+        })
+      )
+    )
+
+    const refreshed = getReport(activeSlug, activeReportId)
+    setActiveReport(refreshed)
+    setExportPreparing(false)
+    setExportProgress({ done: 0, total: 0 })
+
+    return refreshed?.vendorNarratives || existing
+  }
+
   // ── Report actions ───────────────────────────────
 
   const handleSelectVendor = (vendor) => {
     setSelectedVendor(vendor)
-    // Check cache first
     const cached = activeReport?.vendorNarratives?.[vendor.name]
     if (cached) {
       setVendorNarrative(cached)
@@ -189,25 +247,77 @@ export default function Dashboard() {
     }
   }
 
-  // Export handlers — wired in Files 9 & 10
-  const handleExportPDF = () => {
+  // ── Export handlers ──────────────────────────────
+
+  const handleExportPDF = async () => {
     if (!activeReport) return
+    const clientDisplayName = getClient(activeSlug)?.displayName || 'Client'
+
+    if (selectedVendor) {
+      let narrative = activeReport.vendorNarratives?.[selectedVendor.name]
+      if (!narrative) {
+        setExportPreparing(true)
+        setExportProgress({ done: 0, total: 1 })
+        const result = await generateVendorNarrativeSilent(selectedVendor)
+        saveVendorNarrative(activeSlug, activeReportId, result.vendorName, result.narrative)
+        narrative = result.narrative
+        setExportProgress({ done: 1, total: 1 })
+        setActiveReport(getReport(activeSlug, activeReportId))
+        setExportPreparing(false)
+      }
+      exportVendorPDF({
+        clientName: clientDisplayName,
+        asOfDate: activeReport.asOfDate,
+        vendor: selectedVendor,
+        vendorNarrative: narrative,
+      })
+      return
+    }
+
+    const allNarratives = await ensureAllVendorNarratives()
+    const fresh = getReport(activeSlug, activeReportId) || activeReport
     exportReportPDF({
-      clientName: getClient(activeSlug)?.displayName || 'Client',
-      asOfDate: activeReport.asOfDate,
-      parsedData: activeReport.parsedData,
-      clientNarrative: activeReport.clientNarrative,
-      vendorNarratives: activeReport.vendorNarratives,
+      clientName: clientDisplayName,
+      asOfDate: fresh.asOfDate,
+      parsedData: fresh.parsedData,
+      clientNarrative: fresh.clientNarrative,
+      vendorNarratives: allNarratives,
     })
   }
-  const handleExportWord = () => {
+
+  const handleExportWord = async () => {
     if (!activeReport) return
+    const clientDisplayName = getClient(activeSlug)?.displayName || 'Client'
+
+    if (selectedVendor) {
+      let narrative = activeReport.vendorNarratives?.[selectedVendor.name]
+      if (!narrative) {
+        setExportPreparing(true)
+        setExportProgress({ done: 0, total: 1 })
+        const result = await generateVendorNarrativeSilent(selectedVendor)
+        saveVendorNarrative(activeSlug, activeReportId, result.vendorName, result.narrative)
+        narrative = result.narrative
+        setExportProgress({ done: 1, total: 1 })
+        setActiveReport(getReport(activeSlug, activeReportId))
+        setExportPreparing(false)
+      }
+      exportVendorWord({
+        clientName: clientDisplayName,
+        asOfDate: activeReport.asOfDate,
+        vendor: selectedVendor,
+        vendorNarrative: narrative,
+      })
+      return
+    }
+
+    const allNarratives = await ensureAllVendorNarratives()
+    const fresh = getReport(activeSlug, activeReportId) || activeReport
     exportReportWord({
-      clientName: getClient(activeSlug)?.displayName || 'Client',
-      asOfDate: activeReport.asOfDate,
-      parsedData: activeReport.parsedData,
-      clientNarrative: activeReport.clientNarrative,
-      vendorNarratives: activeReport.vendorNarratives,
+      clientName: clientDisplayName,
+      asOfDate: fresh.asOfDate,
+      parsedData: fresh.parsedData,
+      clientNarrative: fresh.clientNarrative,
+      vendorNarratives: allNarratives,
     })
   }
 
@@ -228,6 +338,7 @@ export default function Dashboard() {
             <ClientLibrary
               clients={clients}
               onOpenClient={handleOpenClient}
+              onOpenPeriod={handleOpenPeriod}
               onNewUpload={handleNewUpload}
               onDeleteClient={handleDeleteClient}
             />
@@ -237,6 +348,14 @@ export default function Dashboard() {
             <UploadPanel
               onDataLoaded={handleDataLoaded}
               onCancel={clients.length > 0 ? () => setView(VIEW_LIBRARY) : null}
+            />
+          )}
+
+          {view === VIEW_UPLOAD_SCOPED && (
+            <UploadPanel
+              onDataLoaded={handleDataLoaded}
+              onCancel={() => setView(VIEW_REPORT)}
+              expectedClient={getClient(activeSlug)?.displayName || ''}
             />
           )}
 
@@ -250,6 +369,7 @@ export default function Dashboard() {
                 activeReportId={activeReportId}
                 onSelectPeriod={handleSelectPeriod}
                 onBackToLibrary={handleBackToLibrary}
+                onUploadNewPeriod={handleUploadNewPeriod}
               />
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
@@ -272,6 +392,8 @@ export default function Dashboard() {
                     onRefresh={handleRefreshNarrative}
                     onExportPDF={handleExportPDF}
                     onExportWord={handleExportWord}
+                    exportPreparing={exportPreparing}
+                    exportProgress={exportProgress}
                   />
                 </div>
               </div>

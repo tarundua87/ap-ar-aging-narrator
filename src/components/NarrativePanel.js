@@ -183,6 +183,8 @@ export default function NarrativePanel({
   onRefresh,
   onExportPDF,
   onExportWord,
+  exportPreparing,
+  exportProgress,
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -196,6 +198,36 @@ export default function NarrativePanel({
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)', background: 'white' }}>
+      {/* Export preparation banner — sticky at top, always visible */}
+      {exportPreparing && (
+        <div
+          className="px-6 py-3 flex items-center gap-4"
+          style={{
+            background: 'linear-gradient(90deg, #c8401a, #ea580c)',
+            color: 'white',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+          }}
+        >
+          <div className="w-5 h-5 rounded-full border-2 animate-spin shrink-0" style={{ borderColor: 'white', borderTopColor: 'transparent' }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold leading-tight">Preparing export — please don't navigate away</p>
+            <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.85)' }}>
+              Generating vendor narratives ({exportProgress?.done || 0} of {exportProgress?.total || 0})
+            </p>
+          </div>
+          <div className="w-32 h-2 rounded-full overflow-hidden shrink-0" style={{ background: 'rgba(255,255,255,0.25)' }}>
+            <div
+              className="h-full transition-all"
+              style={{
+                background: 'white',
+                width: exportProgress?.total > 0 ? `${(exportProgress.done / exportProgress.total) * 100}%` : '0%',
+              }}
+            />
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="px-6 py-4" style={{ borderBottom: '1px solid var(--border)', background: 'var(--ink)' }}>
         <div className="flex items-start justify-between gap-4">
@@ -222,11 +254,11 @@ export default function NarrativePanel({
                   <ActionButton onClick={onRefresh} label="↻ Refresh" />
                 )}
                 <ActionButton onClick={handleCopy} label={copied ? '✓ Copied' : 'Copy'} variant={copied ? 'success' : 'default'} />
-                {!isVendorView && onExportPDF && (
-                  <ActionButton onClick={onExportPDF} label="⬇ PDF" variant="primary" />
+                {onExportPDF && (
+                  <ActionButton onClick={onExportPDF} label={exportPreparing ? '⏳ Preparing…' : '⬇ PDF'} variant="primary" disabled={exportPreparing} />
                 )}
-                {!isVendorView && onExportWord && (
-                  <ActionButton onClick={onExportWord} label="⬇ Word" variant="primary" />
+                {onExportWord && (
+                  <ActionButton onClick={onExportWord} label={exportPreparing ? '⏳ Preparing…' : '⬇ Word'} variant="primary" disabled={exportPreparing} />
                 )}
               </>
             )}

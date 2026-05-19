@@ -382,3 +382,187 @@ import {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
+
+  // ───────────────────────────────────────────────────
+// Single-vendor focused Word export
+// ───────────────────────────────────────────────────
+export async function exportVendorWord({ clientName, asOfDate, vendor, vendorNarrative }) {
+  const sections = []
+
+  // ── COVER ──
+  sections.push(
+    new Paragraph({ spacing: { before: 1440 }, children: [new TextRun('')] }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 0, after: 200 },
+      children: [new TextRun({ text: 'VENDOR ANALYSIS', size: 20, bold: true, color: ACCENT, font: 'Arial' })],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 0, after: 160 },
+      children: [new TextRun({ text: vendor.name, size: 48, bold: true, color: DARK, font: 'Arial' })],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 0, after: 100 },
+      children: [new TextRun({ text: `Client: ${clientName}`, size: 24, color: MID, font: 'Arial' })],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 0, after: 480 },
+      children: [new TextRun({ text: `As of ${asOfDate || 'Unknown period'}`, size: 24, color: MID, font: 'Arial', italics: true })],
+    }),
+  )
+
+  // Vendor stats table
+  sections.push(
+    new Table({
+      width: { size: 7920, type: WidthType.DXA },
+      alignment: AlignmentType.CENTER,
+      columnWidths: [2640, 2640, 2640],
+      rows: [
+        new TableRow({
+          children: [
+            tableHeaderCell('Metric', 2640),
+            tableHeaderCell('Value', 2640),
+            tableHeaderCell('Detail', 2640),
+          ],
+        }),
+        new TableRow({
+          children: [
+            tableCell('Total Owed', 2640, false, { bold: true }),
+            tableCell(fmt(vendor.aging.totalAP), 2640, true, { bold: true }),
+            tableCell(`${vendor.invoiceCount} invoices`, 2640, false),
+          ],
+        }),
+        new TableRow({
+          children: [
+            tableCell('Overdue', 2640, true, { bold: true }),
+            tableCell(fmt(vendor.overdueTotal), 2640, false, { bold: true }),
+            tableCell(`Status: ${vendor.status}`, 2640, true),
+          ],
+        }),
+        new TableRow({
+          children: [
+            tableCell('Oldest Invoice', 2640, false, { bold: true }),
+            tableCell(`${vendor.oldestDays} days`, 2640, true, { bold: true }),
+            tableCell('past due', 2640, false),
+          ],
+        }),
+        new TableRow({
+          children: [
+            tableCell('Over 90 Days', 2640, true, { bold: true }),
+            tableCell(fmt(vendor.aging.over90), 2640, false, { bold: true }),
+            tableCell(vendor.hasCredits ? 'Has supplier credits' : 'No credits', 2640, true),
+          ],
+        }),
+      ],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 720 },
+      children: [new TextRun({
+        text: `Generated ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`,
+        size: 18, color: MID, font: 'Arial',
+      })],
+    }),
+    pageBreak(),
+  )
+
+  // ── NARRATIVE ──
+  sections.push(h1('Vendor Narrative'))
+  const narrSections = parseNarrativeSections(vendorNarrative)
+  if (narrSections.length === 0 && vendorNarrative) {
+    sections.push(bodyPara(vendorNarrative))
+  } else {
+    narrSections.forEach(sec => {
+      sections.push(sectionLabel(sec.label))
+      sec.content.split('\n').forEach(line => {
+        if (line.trim()) sections.push(bodyPara(line.trim()))
+      })
+    })
+  }
+
+  // ── INVOICE TABLE ──
+  if (vendor.invoices && vendor.invoices.length > 0) {
+    sections.push(pageBreak(), h1(`All Invoices (${vendor.invoiceCount})`))
+    sections.push(
+      new Table({
+        width: { size: 9360, type: WidthType.DXA },
+        columnWidths: [1800, 1680, 1680, 1800, 2400],
+        rows: [
+          new TableRow({
+            children: [
+              tableHeaderCell('Invoice #', 1800),
+              tableHeaderCell('Date', 1680),
+              tableHeaderCell('Due Date', 1680),
+              tableHeaderCell('Days Past Due', 1800),
+              tableHeaderCell('Open Balance', 2400),
+            ],
+          }),
+          ...vendor.invoices.map((inv, i) => new TableRow({
+            children: [
+              tableCell(inv.invoiceNumber, 1800, i % 2 === 1),
+              tableCell(inv.date, 1680, i % 2 === 1),
+              tableCell(inv.dueDate || '—', 1680, i % 2 === 1),
+              tableCell(inv.daysPastDue > 0 ? `${inv.daysPastDue}d` : '—', 1800, i % 2 === 1, { align: AlignmentType.RIGHT }),
+              tableCell(fmt(inv.openBalance), 2400, i % 2 === 1, { align: AlignmentType.RIGHT, bold: true }),
+            ],
+          })),
+        ],
+      }),
+    )
+  }
+
+  // ── Build document ──
+  const doc = new Document({
+    styles: { default: { document: { run: { font: 'Arial', size: 22 } } } },
+    sections: [{
+      properties: {
+        page: {
+          size: { width: 12240, height: 15840 },
+          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+        },
+      },
+      headers: {
+        default: new Header({
+          children: [new Paragraph({
+            border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: BORDER, space: 4 } },
+            children: [
+              new TextRun({ text: `${clientName}  |  ${vendor.name}  |  As of ${asOfDate || 'Unknown'}`, size: 16, font: 'Arial', color: MID }),
+              new TextRun({ text: '\t\t', size: 16 }),
+              new TextRun({ text: 'VENDOR ANALYSIS', size: 16, font: 'Arial', color: ACCENT, bold: true }),
+            ],
+            tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
+          })],
+        }),
+      },
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            border: { top: { style: BorderStyle.SINGLE, size: 4, color: BORDER, space: 4 } },
+            children: [
+              new TextRun({ text: 'AR/AP Aging Narrator  |  Generated ' + new Date().toLocaleDateString(), size: 16, font: 'Arial', color: MID }),
+              new TextRun({ text: '\tPage ', size: 16, font: 'Arial', color: MID }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 16, font: 'Arial', color: MID }),
+            ],
+            tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
+          })],
+        }),
+      },
+      children: sections,
+    }],
+  })
+
+  const blob = await Packer.toBlob(doc)
+  const filename = `${safeFilename(clientName)}-${safeFilename(vendor.name)}-${safeFilename(asOfDate || 'report')}.docx`
+
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}

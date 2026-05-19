@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 function formatMoney(n) {
   return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -16,19 +16,163 @@ function formatDateRelative(iso) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function ClientCard({ client, onOpen, onDelete }) {
+// Convert an as-of date string to a Date for comparison.
+// Handles "May 18, 2026", "05/18/2026", "May 18 2026", etc.
+function parseAsOfDate(asOfDate) {
+  if (!asOfDate) return new Date(0)
+  const d = new Date(asOfDate)
+  if (!isNaN(d.getTime())) return d
+  // Try cleaning common separators
+  const cleaned = String(asOfDate).replace(/[,.]/g, ' ').replace(/\s+/g, ' ').trim()
+  const d2 = new Date(cleaned)
+  return isNaN(d2.getTime()) ? new Date(0) : d2
+}
+
+// Sort reports — newest as-of date first.
+function sortReportsByAsOfDate(reports) {
+  return [...reports].sort((a, b) => parseAsOfDate(b.asOfDate) - parseAsOfDate(a.asOfDate))
+}
+
+function getHealthTier(overduePercent) {
+  if (overduePercent > 50) {
+    return {
+      tier: 'critical',
+      label: 'Critical',
+      headerBg: '#991b1b',
+      headerAccent: '#fecaca',
+      bodyBg: '#fef2f2',
+      cardBorder: '#fca5a5',
+      overdueColor: '#b91c1c',
+      badgeBg: '#fee2e2',
+      badgeText: '#7f1d1d',
+    }
+  }
+  if (overduePercent >= 25) {
+    return {
+      tier: 'warning',
+      label: 'Needs Attention',
+      headerBg: '#b45309',
+      headerAccent: '#fde68a',
+      bodyBg: '#fffbeb',
+      cardBorder: '#fcd34d',
+      overdueColor: '#b45309',
+      badgeBg: '#fef3c7',
+      badgeText: '#78350f',
+    }
+  }
+  return {
+    tier: 'healthy',
+    label: 'On Track',
+    headerBg: '#15803d',
+    headerAccent: '#bbf7d0',
+    bodyBg: '#f0fdf4',
+    cardBorder: '#86efac',
+    overdueColor: '#15803d',
+    badgeBg: '#dcfce7',
+    badgeText: '#14532d',
+  }
+}
+
+function PeriodDropdown({ reports, slug, onOpenPeriod, badgeBg, badgeText }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef()
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  if (!reports || reports.length === 0) return null
+
+  const sorted = sortReportsByAsOfDate(reports)
+
+  if (sorted.length === 1) {
+    return (
+      <span className="px-2 py-0.5 rounded-full font-medium text-xs" style={{ background: badgeBg, color: badgeText }}>
+        1 period
+      </span>
+    )
+  }
+
+  const handleToggle = (e) => {
+    e.stopPropagation()
+    e.preventDefault()
+    setOpen(!open)
+  }
+
+  const handleSelect = (e, reportId) => {
+    e.stopPropagation()
+    e.preventDefault()
+    setOpen(false)
+    onOpenPeriod(slug, reportId)
+  }
+
+  return (
+    <div ref={ref} className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+      <span
+        onClick={handleToggle}
+        className="px-2 py-0.5 rounded-full font-medium text-xs cursor-pointer inline-flex items-center gap-1 transition-all hover:opacity-80"
+        style={{ background: badgeBg, color: badgeText }}
+      >
+        {sorted.length} periods
+        <span style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', fontSize: '0.7em' }}>▾</span>
+      </span>
+
+      {open && (
+        <div
+          className="absolute left-0 rounded-lg overflow-hidden"
+          style={{
+            top: 'calc(100% + 6px)',
+            background: 'white',
+            border: '1px solid var(--border)',
+            minWidth: '240px',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+            zIndex: 50,
+          }}
+        >
+          <div className="px-3 py-2 text-xs uppercase tracking-widest" style={{ background: '#faf9f7', color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+            Open Period
+          </div>
+          {sorted.map((report, idx) => (
+            <div
+              key={report.id}
+              onClick={(e) => handleSelect(e, report.id)}
+              className="px-3 py-2.5 transition-all cursor-pointer hover:bg-gray-50"
+              style={{ borderBottom: idx < sorted.length - 1 ? '1px solid var(--border)' : 'none' }}
+            >
+              <div className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{report.asOfDate}</div>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                Uploaded {new Date(report.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {idx === 0 && ' · latest'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClientCard({ client, onOpen, onOpenPeriod, onDelete }) {
   const [confirming, setConfirming] = useState(false)
-  const latestReport = [...client.reports].sort((a, b) =>
-    new Date(b.uploadedAt) - new Date(a.uploadedAt)
-  )[0]
+
+  // Latest report = the one with the newest AS-OF DATE (not upload time)
+  const latestReport = sortReportsByAsOfDate(client.reports)[0]
 
   const aggregate = latestReport?.parsedData?.aggregate
   const overduePercent = aggregate && aggregate.totalAP > 0
-    ? ((aggregate.overdueTotal / aggregate.totalAP) * 100).toFixed(1)
-    : '0.0'
+    ? (aggregate.overdueTotal / aggregate.totalAP) * 100
+    : 0
+  const overduePercentStr = overduePercent.toFixed(1)
+
+  const health = getHealthTier(overduePercent)
 
   const handleDeleteClick = (e) => {
     e.stopPropagation()
+    e.preventDefault()
     if (confirming) {
       onDelete(client.slug)
     } else {
@@ -37,25 +181,58 @@ function ClientCard({ client, onOpen, onDelete }) {
     }
   }
 
+  // Card-level click opens the latest period
+  const handleCardClick = () => {
+    if (latestReport) onOpenPeriod(client.slug, latestReport.id)
+    else onOpen(client.slug)
+  }
+
   return (
-    <button
-      onClick={() => onOpen(client.slug)}
-      className="text-left rounded-xl overflow-hidden transition-all hover:shadow-lg"
-      style={{ border: '1px solid var(--border)', background: 'white' }}
+    <div
+      onClick={handleCardClick}
+      className="text-left rounded-xl transition-all hover:shadow-lg cursor-pointer"
+      style={{ border: `1px solid ${health.cardBorder}`, background: 'white', position: 'relative' }}
     >
-      <div className="px-5 py-4" style={{ background: 'var(--ink)' }}>
-        <p className="text-xs uppercase tracking-widest mb-1" style={{ color: 'var(--accent)' }}>
-          A/P Aging
-        </p>
-        <h3 className="text-lg font-bold leading-tight" style={{ color: 'var(--paper)', fontFamily: 'Playfair Display, serif' }}>
-          {client.displayName}
-        </h3>
-        <p className="text-xs mt-1" style={{ color: '#9ca3af' }}>
-          As of {latestReport?.asOfDate || 'Unknown'}
-        </p>
+      {/* Card header */}
+      <div
+        className="px-5 py-4"
+        style={{
+          background: health.headerBg,
+          borderTopLeftRadius: '12px',
+          borderTopRightRadius: '12px',
+        }}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs uppercase tracking-widest mb-1" style={{ color: health.headerAccent }}>
+              A/P Aging
+            </p>
+            <h3 className="text-lg font-bold leading-tight truncate" style={{ color: 'var(--paper)', fontFamily: 'Playfair Display, serif' }}>
+              {client.displayName}
+            </h3>
+            <p className="text-xs mt-1" style={{ color: '#e5e7eb' }}>
+              As of {latestReport?.asOfDate || 'Unknown'}
+            </p>
+          </div>
+          <span className="text-xs px-2 py-1 rounded-full shrink-0 font-semibold" style={{
+            background: 'rgba(255,255,255,0.18)',
+            color: health.headerAccent,
+            border: `1px solid ${health.headerAccent}40`,
+          }}>
+            {health.label}
+          </span>
+        </div>
       </div>
 
-      <div className="px-5 py-4">
+      {/* Card body — NO overflow-hidden here so dropdown can extend */}
+      <div
+        className="px-5 py-4"
+        style={{
+          background: health.bodyBg,
+          borderBottomLeftRadius: '12px',
+          borderBottomRightRadius: '12px',
+        }}
+      >
         {aggregate && (
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
@@ -64,24 +241,28 @@ function ClientCard({ client, onOpen, onDelete }) {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Overdue</p>
-              <p className="text-sm font-bold mt-0.5" style={{ color: parseFloat(overduePercent) > 50 ? '#c8401a' : parseFloat(overduePercent) > 20 ? '#b87d00' : '#1a7a4a' }}>
-                {overduePercent}%
+              <p className="text-sm font-bold mt-0.5" style={{ color: health.overdueColor }}>
+                {overduePercentStr}%
               </p>
             </div>
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
-            <span className="px-2 py-0.5 rounded-full" style={{ background: '#f0ece6' }}>
-              {client.reports.length} period{client.reports.length !== 1 ? 's' : ''}
-            </span>
+        <div className="flex items-center justify-between pt-3 gap-2" style={{ borderTop: `1px solid ${health.cardBorder}` }}>
+          <div className="flex items-center gap-2 text-xs min-w-0" style={{ color: 'var(--muted)' }}>
+            <PeriodDropdown
+              reports={client.reports}
+              slug={client.slug}
+              onOpenPeriod={onOpenPeriod}
+              badgeBg={health.badgeBg}
+              badgeText={health.badgeText}
+            />
             <span>·</span>
-            <span>Updated {formatDateRelative(client.lastUpdated)}</span>
+            <span className="truncate">Updated {formatDateRelative(client.lastUpdated)}</span>
           </div>
           <span
             onClick={handleDeleteClick}
-            className="text-xs px-2 py-1 rounded transition-all cursor-pointer"
+            className="text-xs px-2 py-1 rounded transition-all cursor-pointer shrink-0"
             style={{
               color: confirming ? 'white' : 'var(--muted)',
               background: confirming ? '#c8401a' : 'transparent',
@@ -92,11 +273,11 @@ function ClientCard({ client, onOpen, onDelete }) {
           </span>
         </div>
       </div>
-    </button>
+    </div>
   )
 }
 
-export default function ClientLibrary({ clients, onOpenClient, onNewUpload, onDeleteClient }) {
+export default function ClientLibrary({ clients, onOpenClient, onOpenPeriod, onNewUpload, onDeleteClient }) {
   if (clients.length === 0) {
     return (
       <div className="max-w-2xl mx-auto mt-16 text-center">
@@ -116,6 +297,15 @@ export default function ClientLibrary({ clients, onOpenClient, onNewUpload, onDe
       </div>
     )
   }
+
+  const tierCounts = clients.reduce((acc, c) => {
+    const latest = sortReportsByAsOfDate(c.reports)[0]
+    const agg = latest?.parsedData?.aggregate
+    const pct = agg && agg.totalAP > 0 ? (agg.overdueTotal / agg.totalAP) * 100 : 0
+    const tier = pct > 50 ? 'critical' : pct >= 25 ? 'warning' : 'healthy'
+    acc[tier] = (acc[tier] || 0) + 1
+    return acc
+  }, {})
 
   return (
     <div>
@@ -137,12 +327,33 @@ export default function ClientLibrary({ clients, onOpenClient, onNewUpload, onDe
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {clients.length > 1 && (
+        <div className="flex gap-2 mb-6 text-xs">
+          {tierCounts.critical > 0 && (
+            <span className="px-3 py-1.5 rounded-full font-medium" style={{ background: '#fee2e2', color: '#991b1b' }}>
+              {tierCounts.critical} Critical
+            </span>
+          )}
+          {tierCounts.warning > 0 && (
+            <span className="px-3 py-1.5 rounded-full font-medium" style={{ background: '#fef3c7', color: '#78350f' }}>
+              {tierCounts.warning} Needs Attention
+            </span>
+          )}
+          {tierCounts.healthy > 0 && (
+            <span className="px-3 py-1.5 rounded-full font-medium" style={{ background: '#dcfce7', color: '#14532d' }}>
+              {tierCounts.healthy} On Track
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" style={{ alignItems: 'start' }}>
         {clients.map(client => (
           <ClientCard
             key={client.slug}
             client={client}
             onOpen={onOpenClient}
+            onOpenPeriod={onOpenPeriod}
             onDelete={onDeleteClient}
           />
         ))}

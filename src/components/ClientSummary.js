@@ -56,6 +56,7 @@ export default function ClientSummary({
   activeReportId,
   onSelectPeriod,
   onBackToLibrary,
+  onUploadNewPeriod,
 }) {
   const overduePercent = aggregate.totalAP > 0
     ? ((aggregate.overdueTotal / aggregate.totalAP) * 100).toFixed(1)
@@ -81,7 +82,16 @@ export default function ClientSummary({
             </p>
           )}
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-2">
+          {onUploadNewPeriod && (
+            <button
+              onClick={onUploadNewPeriod}
+              className="text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-90"
+              style={{ background: 'var(--accent)', color: 'white', fontWeight: 500 }}
+            >
+              + Upload New Period
+            </button>
+          )}
           <PeriodSelector
             reports={reports || []}
             activeReportId={activeReportId}

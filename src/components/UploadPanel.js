@@ -1,7 +1,12 @@
 import { useState, useRef } from 'react'
 import { parseAPAgingDetail } from '../lib/parseAPAging'
 
-export default function UploadPanel({ onDataLoaded, onCancel }) {
+// Normalize a client name for comparison
+function normalizeName(s) {
+  return String(s || '').toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
+export default function UploadPanel({ onDataLoaded, onCancel, expectedClient }) {
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -20,6 +25,21 @@ export default function UploadPanel({ onDataLoaded, onCancel }) {
           setLoading(false)
           return
         }
+
+        // If scoped to a specific client, validate the name matches
+        if (expectedClient) {
+          const uploadedName = normalizeName(result.clientName)
+          const expected = normalizeName(expectedClient)
+          if (uploadedName !== expected) {
+            setError(
+              `This CSV is for "${result.clientName}", but you're uploading to "${expectedClient}". ` +
+              `To upload a different client, go back to the Library and use "+ New Upload".`
+            )
+            setLoading(false)
+            return
+          }
+        }
+
         onDataLoaded(result)
       } catch (err) {
         console.error(err)
@@ -40,17 +60,23 @@ export default function UploadPanel({ onDataLoaded, onCancel }) {
     <div className="max-w-2xl mx-auto mt-16">
       {onCancel && (
         <button onClick={onCancel} className="text-xs mb-4 flex items-center gap-1.5 transition-all hover:opacity-80" style={{ color: 'var(--muted)' }}>
-          ← Back to Library
+          ← {expectedClient ? `Back to ${expectedClient}` : 'Back to Library'}
         </button>
       )}
 
       <div className="text-center mb-10">
+        {expectedClient && (
+          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: 'var(--accent)' }}>
+            Upload New Period
+          </p>
+        )}
         <h2 className="text-3xl font-bold mb-3" style={{ fontFamily: 'Playfair Display, serif' }}>
-          Upload A/P Aging Detail
+          {expectedClient ? `Add a New Period for ${expectedClient}` : 'Upload A/P Aging Detail'}
         </h2>
         <p className="text-sm" style={{ color: 'var(--muted)' }}>
-          Export the <strong>A/P Aging Detail Report</strong> from QuickBooks Online as CSV.
-          The client name and as-of date will be detected automatically — no cleanup required.
+          {expectedClient
+            ? `Export the latest A/P Aging Detail Report for ${expectedClient} from QuickBooks Online. The system will verify the CSV matches this client.`
+            : 'Export the A/P Aging Detail Report from QuickBooks Online as CSV. The client name and as-of date will be detected automatically.'}
         </p>
       </div>
 

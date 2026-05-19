@@ -14,7 +14,16 @@ export default function PeriodSelector({ reports, activeReportId, onSelectPeriod
 
   if (!reports || reports.length <= 1) return null
 
-  const sorted = [...reports].sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
+  // Sort by as-of date (the report period), not upload timestamp
+  const parseAsOfDate = (s) => {
+    if (!s) return new Date(0)
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) return d
+    const cleaned = String(s).replace(/[,.]/g, ' ').replace(/\s+/g, ' ').trim()
+    const d2 = new Date(cleaned)
+    return isNaN(d2.getTime()) ? new Date(0) : d2
+  }
+  const sorted = [...reports].sort((a, b) => parseAsOfDate(b.asOfDate) - parseAsOfDate(a.asOfDate))
   const active = sorted.find(r => r.id === activeReportId) || sorted[0]
 
   return (
@@ -59,7 +68,8 @@ export default function PeriodSelector({ reports, activeReportId, onSelectPeriod
                 <div className="text-sm font-medium">{report.asOfDate}</div>
                 <div className="text-xs mt-0.5" style={{ color: isActive ? '#9ca3af' : 'var(--muted)' }}>
                   Uploaded {new Date(report.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  {isActive && ' · current'}
+                  {sorted[0].id === report.id && ' · latest'}
+                  {isActive && sorted[0].id !== report.id && ' · current'}
                 </div>
               </button>
             )

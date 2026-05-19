@@ -155,7 +155,35 @@ function TopOldestInvoices({ invoices }) {
   )
 }
 
-export default function NarrativePanel({ clientName, vendor, aggregate, narrative, loading }) {
+function ActionButton({ onClick, label, variant = 'default', disabled = false }) {
+  const styles = {
+    default: { background: '#374151', color: 'white' },
+    primary: { background: 'var(--accent)', color: 'white' },
+    success: { background: '#1a7a4a', color: 'white' },
+  }
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="text-xs px-3 py-1.5 rounded-lg transition-all shrink-0"
+      style={{ ...styles[variant], opacity: disabled ? 0.5 : 1 }}
+    >
+      {label}
+    </button>
+  )
+}
+
+export default function NarrativePanel({
+  clientName,
+  asOfDate,
+  vendor,
+  aggregate,
+  narrative,
+  loading,
+  onRefresh,
+  onExportPDF,
+  onExportWord,
+}) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
@@ -185,11 +213,24 @@ export default function NarrativePanel({ clientName, vendor, aggregate, narrativ
               }
             </p>
           </div>
-          {narrative && (
-            <button onClick={handleCopy} className="text-xs px-3 py-1.5 rounded-lg transition-all shrink-0" style={{ background: copied ? '#1a7a4a' : '#374151', color: 'white' }}>
-              {copied ? '✓ Copied' : 'Copy Narrative'}
-            </button>
-          )}
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 shrink-0">
+            {narrative && !loading && (
+              <>
+                {onRefresh && (
+                  <ActionButton onClick={onRefresh} label="↻ Refresh" />
+                )}
+                <ActionButton onClick={handleCopy} label={copied ? '✓ Copied' : 'Copy'} variant={copied ? 'success' : 'default'} />
+                {!isVendorView && onExportPDF && (
+                  <ActionButton onClick={onExportPDF} label="⬇ PDF" variant="primary" />
+                )}
+                {!isVendorView && onExportWord && (
+                  <ActionButton onClick={onExportWord} label="⬇ Word" variant="primary" />
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {isVendorView && (
@@ -217,14 +258,12 @@ export default function NarrativePanel({ clientName, vendor, aggregate, narrativ
               </p>
             )}
 
-            {/* Top oldest invoices in client view */}
             {!isVendorView && aggregate?.topOldestInvoices?.length > 0 && (
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
                 <TopOldestInvoices invoices={aggregate.topOldestInvoices} />
               </div>
             )}
 
-            {/* Invoice table in vendor view */}
             {isVendorView && vendor.invoices?.length > 0 && (
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
                 <h4 className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--accent)' }}>

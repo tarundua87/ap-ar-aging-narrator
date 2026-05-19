@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { parseAPAgingDetail } from '../lib/parseAPAging'
 
-export default function UploadPanel({ onDataLoaded }) {
+export default function UploadPanel({ onDataLoaded, onCancel }) {
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -22,6 +22,7 @@ export default function UploadPanel({ onDataLoaded }) {
         }
         onDataLoaded(result)
       } catch (err) {
+        console.error(err)
         setError('Failed to parse CSV. Please ensure it is a QBO A/P Aging Detail Report export.')
         setLoading(false)
       }
@@ -37,13 +38,19 @@ export default function UploadPanel({ onDataLoaded }) {
 
   return (
     <div className="max-w-2xl mx-auto mt-16">
+      {onCancel && (
+        <button onClick={onCancel} className="text-xs mb-4 flex items-center gap-1.5 transition-all hover:opacity-80" style={{ color: 'var(--muted)' }}>
+          ← Back to Library
+        </button>
+      )}
+
       <div className="text-center mb-10">
         <h2 className="text-3xl font-bold mb-3" style={{ fontFamily: 'Playfair Display, serif' }}>
           Upload A/P Aging Detail
         </h2>
         <p className="text-sm" style={{ color: 'var(--muted)' }}>
           Export the <strong>A/P Aging Detail Report</strong> from QuickBooks Online as CSV.
-          The client name and all vendor data will be detected automatically — no cleanup required.
+          The client name and as-of date will be detected automatically — no cleanup required.
         </p>
       </div>
 
@@ -77,6 +84,7 @@ export default function UploadPanel({ onDataLoaded }) {
         <p className="font-semibold mb-2">How to export from QBO:</p>
         <ol className="space-y-1 ml-4" style={{ listStyle: 'decimal' }}>
           <li>Go to <strong>Reports</strong> → search <strong>"A/P Aging Detail"</strong></li>
+          <li>Set your aging buckets (default 30/60/90 works)</li>
           <li>Click <strong>Export</strong> → <strong>Export to CSV</strong></li>
           <li>Upload the CSV directly — no cleanup needed</li>
         </ol>

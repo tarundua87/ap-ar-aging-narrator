@@ -1,8 +1,8 @@
 import Papa from 'papaparse'
 
 // Parses the QBO A/P Aging Detail Report CSV format
-// Auto-detects client name, parses bucket-grouped invoices,
-// groups by vendor, calculates client-level aggregate.
+// Auto-detects client name AND as-of date,
+// parses bucket-grouped invoices, groups by vendor.
 
 const BUCKET_PATTERNS = [
   { key: 'over90',    label: 'Over 90 Days',  match: /91\s*or\s*more|over\s*90|>\s*90|91\+/i },
@@ -34,15 +34,31 @@ function isSubtotalRow(row) {
 }
 
 function isInvoiceRow(row) {
-  // Invoice rows: empty col A, but have Date in [1] and Vendor in [4]
   return !row[0] && row[1] && row[4]
+}
+
+// Detect the "As of <date>" line from QBO header
+function detectAsOfDate(rows) {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i] || []
+    for (const cell of row) {
+      const text = String(cell || '').trim()
+      if (!text) continue
+      // Match "As of May 18, 2026" or "As of 05/18/2026"
+      const m = text.match(/as\s+of\s+(.+)/i)
+      if (m) {
+        return m[1].trim().replace(/[.,;]\s*$/, '')
+      }
+    }
+  }
+  return null
 }
 
 export function parseAPAgingDetail(csvText) {
   const result = Papa.parse(csvText, { skipEmptyLines: 'greedy' })
   const rows = result.data
 
-  // 1. Auto-detect client name (first non-empty row that isn't aging/date metadata)
+  // 1. Auto-detect client name
   let clientName = 'Client'
   for (const row of rows) {
     const first = String(row[0] || '').trim()
@@ -52,7 +68,10 @@ export function parseAPAgingDetail(csvText) {
     }
   }
 
-  // 2. Walk rows, track current bucket, collect invoices
+  // 2. Auto-detect as-of date
+  const asOfDate = detectAsOfDate(rows)
+
+  // 3. Walk rows, track bucket, collect invoices
   let currentBucket = null
   const invoices = []
 
@@ -83,7 +102,7 @@ export function parseAPAgingDetail(csvText) {
     }
   }
 
-  // 3. Group by vendor
+  // 4. Group by vendor
   const vendorMap = {}
   for (const inv of invoices) {
     if (!vendorMap[inv.vendor]) {
@@ -105,7 +124,7 @@ export function parseAPAgingDetail(csvText) {
     if (inv.openBalance < 0) v.hasCredits = true
   }
 
-  // 4. Calculate urgency score + status per vendor
+  // 5. Urgency score + status per vendor
   const vendors = Object.values(vendorMap).map((v) => {
     const urgencyScore =
       (v.aging.over90 * 4) +
@@ -118,13 +137,12 @@ export function parseAPAgingDetail(csvText) {
     else if (v.aging.days31_60 > 0 || v.aging.days1_30 > Math.abs(v.aging.totalAP) * 0.3) status = 'warning'
 
     v.invoices.sort((a, b) => b.daysPastDue - a.daysPastDue)
-
     const overdueTotal = v.aging.days1_30 + v.aging.days31_60 + v.aging.days61_90 + v.aging.over90
 
     return { ...v, urgencyScore, status, overdueTotal }
   }).sort((a, b) => b.urgencyScore - a.urgencyScore)
 
-  // 5. Client-level aggregate
+  // 6. Client-level aggregate
   const aggregate = {
     totalAP: 0,
     current: 0,
@@ -161,5 +179,5 @@ export function parseAPAgingDetail(csvText) {
     aggregate.oldestInvoiceDays = aggregate.topOldestInvoices[0].daysPastDue
   }
 
-  return { clientName, vendors, aggregate, invoiceCount: invoices.length }
+  return { clientName, asOfDate, vendors, aggregate, invoiceCount: invoices.length }
 }

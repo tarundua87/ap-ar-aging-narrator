@@ -78,6 +78,21 @@ export const DEFAULT_CONFIG = {
     { id: 'resolved', label: 'Resolved', enabled: true, isDefault: true, meta: { color: '#15803d' } },
     { id: 'escalated', label: 'Escalated', enabled: true, isDefault: true, meta: { color: '#c8401a' } },
   ],
+  vendorNatures: [
+    { id: 'rent', label: 'Rent', enabled: true, isDefault: true, meta: { icon: '🏢' } },
+    { id: 'utilities', label: 'Utilities', enabled: true, isDefault: true, meta: { icon: '⚡' } },
+    { id: 'inventory', label: 'Inventory / Cost of Goods', enabled: true, isDefault: true, meta: { icon: '📦' } },
+    { id: 'professional-services', label: 'Professional Services', enabled: true, isDefault: true, meta: { icon: '💼' } },
+    { id: 'software-saas', label: 'Software / SaaS', enabled: true, isDefault: true, meta: { icon: '💻' } },
+    { id: 'equipment', label: 'Equipment', enabled: true, isDefault: true, meta: { icon: '🛠️' } },
+    { id: 'insurance', label: 'Insurance', enabled: true, isDefault: true, meta: { icon: '🛡️' } },
+    { id: 'tax-government', label: 'Tax / Government', enabled: true, isDefault: true, meta: { icon: '🏛️' } },
+    { id: 'office-supplies', label: 'Office Supplies', enabled: true, isDefault: true, meta: { icon: '📎' } },
+    { id: 'marketing-advertising', label: 'Marketing / Advertising', enabled: true, isDefault: true, meta: { icon: '📣' } },
+    { id: 'telecom', label: 'Telecom', enabled: true, isDefault: true, meta: { icon: '📡' } },
+    { id: 'banking-fees', label: 'Banking / Fees', enabled: true, isDefault: true, meta: { icon: '🏦' } },
+    { id: 'other', label: 'Other', enabled: true, isDefault: true, meta: { icon: '•' } },
+  ],
 }
 
 // ── Read / write storage ────────────────────────────────────
@@ -206,6 +221,7 @@ export function updateItemMeta(category, id, newMeta) {
 export const CONFIG_CATEGORIES = [
   { key: 'paymentMethods', label: 'Payment Methods', description: 'How vendors are paid' },
   { key: 'criticalityLevels', label: 'Criticality Levels', description: 'How urgent each vendor is' },
+  { key: 'vendorNatures', label: 'Vendor Nature', description: 'What the vendor provides (rent, utilities, inventory, etc.)' },
   { key: 'paymentTerms', label: 'Payment Terms', description: 'Net days for invoice due dates' },
   { key: 'actionFlags', label: 'Vendor Action Flags', description: 'Active state of a vendor' },
   { key: 'statuses', label: 'Vendor Statuses', description: 'Workflow status of a vendor' },

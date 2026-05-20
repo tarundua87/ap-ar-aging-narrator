@@ -50,6 +50,7 @@ export default function VendorProfileForm({
 
   const paymentMethods = getEnabledItems('paymentMethods')
   const criticalityLevels = getEnabledItems('criticalityLevels')
+  const vendorNatures = getEnabledItems('vendorNatures')
   const paymentTerms = getEnabledItems('paymentTerms')
   const actionFlags = getEnabledItems('actionFlags')
   const statuses = getEnabledItems('statuses')
@@ -106,6 +107,7 @@ export default function VendorProfileForm({
       )}
 
       {/* Two-column grid on wider screens */}
+      {/* Two-column grid on wider screens */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5">
         <Field label="Payment Method" hint="How this vendor is typically paid">
           <Select value={profile.paymentMethodId} onChange={(v) => update('paymentMethodId', v)} options={paymentMethods} />
@@ -113,6 +115,24 @@ export default function VendorProfileForm({
 
         <Field label="Criticality" hint="How urgent is this vendor">
           <Select value={profile.criticalityId} onChange={(v) => update('criticalityId', v)} options={criticalityLevels} />
+        </Field>
+
+        <Field label="Vendor Nature" hint="What this vendor provides">
+          <Select value={profile.natureId || 'other'} onChange={(v) => update('natureId', v)} options={vendorNatures} withMeta />
+        </Field>
+
+        <Field label="1099 Eligible" hint="US tax reporting eligibility">
+          <label className="flex items-center gap-2 cursor-pointer" style={{ padding: '8px 0' }}>
+            <input
+              type="checkbox"
+              checked={!!profile.is1099Eligible}
+              onChange={(e) => update('is1099Eligible', e.target.checked)}
+              style={{ width: '18px', height: '18px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+            />
+            <span className="text-sm" style={{ color: 'var(--ink)' }}>
+              {profile.is1099Eligible ? 'Yes — eligible for 1099' : 'No — not eligible'}
+            </span>
+          </label>
         </Field>
 
         <Field label="Payment Terms" hint="Override the invoice due date logic">

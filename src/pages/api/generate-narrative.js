@@ -46,6 +46,12 @@ function fmt(n) {
 function summarizeVendorProfile(profile) {
   if (!profile) return null
   const parts = []
+  if (profile.nature && profile.nature !== 'Other') {
+    parts.push(`Nature: ${profile.nature}`)
+  }
+  if (profile.is1099Eligible) {
+    parts.push(`1099 Eligible: Yes`)
+  }
   if (profile.paymentMethod && profile.paymentMethod !== 'Manual') {
     parts.push(`Payment: ${profile.paymentMethod}`)
   }
@@ -107,14 +113,16 @@ function buildClientPrompt(clientName, vendors, aggregate, vendorProfiles = {}, 
 
   return `You are an expert accounting advisor at an outsourced bookkeeping firm in India serving a US-based small business client. Generate a concise, professional A/P aging memo for the client's controller or business owner.
 
-CRITICAL INSTRUCTIONS:
-- Each vendor may have a PROFILE describing payment method, criticality, payment terms, action flags, and notes. ALWAYS factor profile context into your recommendations.
-- A vendor on "Standing Instruction" or "Auto-Debit" does NOT need manual follow-up — explicitly say so.
-- A vendor marked "Critical" criticality (utilities, rent, taxes) must be prioritized even if its aging looks moderate.
-- A vendor with custom payment terms (e.g., Net 90, Net 120) may show as overdue in aging buckets but is actually within terms — call this out and DO NOT recommend chasing it.
-- Vendors with "Hold", "Disputed", or "Awaiting approval" flags require different actions than just paying — respect those flags.
-- Invoice-level overrides override vendor-level guidance. If a specific invoice is flagged "Disputed" or "Cancelled (credit received)", treat it accordingly.
-- If profile notes contain context (e.g., "ongoing dispute on Inv #1247"), incorporate that into your recommendations.
+  CRITICAL INSTRUCTIONS:
+  - Each vendor may have a PROFILE describing nature (rent, utilities, etc.), 1099 eligibility, payment method, criticality, payment terms, action flags, and notes. ALWAYS factor profile context into your recommendations.
+  - A vendor on "Standing Instruction" or "Auto-Debit" does NOT need manual follow-up — explicitly say so.
+  - A vendor marked "Critical" criticality (utilities, rent, taxes) must be prioritized even if its aging looks moderate.
+  - Vendor Nature gives important context: Rent and Utilities are operationally critical; Inventory shortfalls affect operations; Professional Services and SaaS can usually wait; Tax/Government vendors must never be delayed.
+  - 1099-Eligible vendors are subject to US year-end tax reporting. If you observe an active 1099 vendor in the narrative, briefly note this where contextually appropriate (e.g., "for year-end 1099 tracking, please confirm W-9 is on file"). Do NOT discuss YTD totals or thresholds — that is tracked separately.
+  - A vendor with custom payment terms (e.g., Net 90, Net 120) may show as overdue in aging buckets but is actually within terms — call this out and DO NOT recommend chasing it.
+  - Vendors with "Hold", "Disputed", or "Awaiting approval" flags require different actions than just paying — respect those flags.
+  - Invoice-level overrides override vendor-level guidance. If a specific invoice is flagged "Disputed" or "Cancelled (credit received)", treat it accordingly.
+  - If profile notes contain context (e.g., "ongoing dispute on Inv #1247"), incorporate that into your recommendations.
 
 CLIENT: ${clientName}
 TOTAL A/P: ${fmt(aggregate.totalAP)} across ${aggregate.vendorCount} vendors and ${aggregate.invoiceCount} open invoices.
@@ -182,13 +190,15 @@ function buildVendorPrompt(clientName, vendor, vendorProfiles = {}, invoiceOverr
 
   return `You are an expert accounting advisor at an outsourced bookkeeping firm in India serving the US-based client "${clientName}". Generate a concise vendor-specific A/P analysis.
 
-CRITICAL INSTRUCTIONS:
-- This vendor may have a PROFILE describing how they're paid and how critical they are.
-- If profile indicates auto-payment (standing instruction, auto-debit), do NOT recommend chasing — acknowledge it's auto-clearing.
-- If criticality is "Critical" (rent, utilities), elevate urgency even if aging looks moderate.
-- If payment terms are non-default (e.g., Net 90), invoices may LOOK overdue in standard aging but actually be within terms.
-- Invoice-level overrides describe specific invoice situations (disputes, cancellations, holds) — handle accordingly.
-- If profile or invoice notes contain context, incorporate it into recommendations.
+  CRITICAL INSTRUCTIONS:
+  - This vendor may have a PROFILE describing nature (rent, utilities, etc.), 1099 status, payment method, criticality, and more.
+  - If profile indicates auto-payment (standing instruction, auto-debit), do NOT recommend chasing — acknowledge it's auto-clearing.
+  - If criticality is "Critical" (rent, utilities), elevate urgency even if aging looks moderate.
+  - Vendor Nature provides context: e.g., Rent/Utilities are operationally critical; Tax/Government cannot be delayed; SaaS and Professional Services have more flexibility.
+  - If the vendor is 1099-Eligible, mention briefly where contextually appropriate that W-9 status should be confirmed for year-end. Do NOT calculate YTD or thresholds.
+  - If payment terms are non-default (e.g., Net 90), invoices may LOOK overdue in standard aging but actually be within terms.
+  - Invoice-level overrides describe specific invoice situations (disputes, cancellations, holds) — handle accordingly.
+  - If profile or invoice notes contain context, incorporate it into recommendations.
 
 CLIENT: ${clientName}
 VENDOR: ${vendor.name}

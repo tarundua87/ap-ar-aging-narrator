@@ -174,6 +174,7 @@ function VendorDeepEdit({ clientSlug, reportId, vendor, profile, suggestion, ove
 function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate, onDeepEdit }) {
   const paymentMethods = getEnabledItems('paymentMethods')
   const criticalityLevels = getEnabledItems('criticalityLevels')
+  const vendorNatures = getEnabledItems('vendorNatures')
   const actionFlags = getEnabledItems('actionFlags')
   const statuses = getEnabledItems('statuses')
 
@@ -187,13 +188,15 @@ function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate,
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
       <div style={{ overflowX: 'auto' }}>
-        <table className="w-full text-xs" style={{ minWidth: '900px' }}>
+      <table className="w-full text-xs" style={{ minWidth: '1100px' }}>
           <thead style={{ background: 'var(--ink)' }}>
             <tr>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Vendor</th>
               <th className="text-right px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Total A/P</th>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Payment</th>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Criticality</th>
+              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Nature</th>
+              <th className="text-center px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>1099</th>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Action Flag</th>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Status</th>
               <th className="px-3 py-2.5"></th>
@@ -243,6 +246,22 @@ function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate,
                       value={profile.criticalityId}
                       onChange={(v) => updateField(vendor.name, 'criticalityId', v)}
                       options={criticalityLevels}
+                    />
+                  </td>
+                  <td className="px-3 py-2" style={{ minWidth: '160px' }}>
+                    <InlineSelect
+                      value={profile.natureId || 'other'}
+                      onChange={(v) => updateField(vendor.name, 'natureId', v)}
+                      options={vendorNatures}
+                      withIcons
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center" style={{ minWidth: '60px' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!profile.is1099Eligible}
+                      onChange={(e) => updateField(vendor.name, 'is1099Eligible', e.target.checked)}
+                      style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }}
                     />
                   </td>
                   <td className="px-3 py-2" style={{ minWidth: '180px' }}>

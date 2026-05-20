@@ -22,10 +22,12 @@ export function emptyProfile() {
   return {
     paymentMethodId: 'manual',
     criticalityId: 'standard',
+    natureId: 'other',           // NEW — vendor category (rent, utilities, etc.)
+    is1099Eligible: false,        // NEW — US 1099 reporting eligibility
     paymentTermsId: 'default',
-    customTermsDays: null,    // when paymentTermsId === 'custom'
+    customTermsDays: null,        // when paymentTermsId === 'custom'
     notes: '',
-    reminderDate: '',         // ISO date YYYY-MM-DD
+    reminderDate: '',             // ISO date YYYY-MM-DD
     actionFlagId: 'none',
     statusId: 'pending',
     updatedAt: null,
@@ -244,12 +246,14 @@ export function describeProfile(profile) {
   const lookups = {
     paymentMethod: getItemById('paymentMethods', profile.paymentMethodId)?.label || 'Unknown',
     criticality: getItemById('criticalityLevels', profile.criticalityId)?.label || 'Unknown',
+    nature: getItemById('vendorNatures', profile.natureId)?.label || 'Other',
     paymentTerms: getItemById('paymentTerms', profile.paymentTermsId)?.label || 'Default',
     actionFlag: getItemById('actionFlags', profile.actionFlagId)?.label || 'None',
     status: getItemById('statuses', profile.statusId)?.label || 'Pending',
   }
   return {
     ...lookups,
+    is1099Eligible: !!profile.is1099Eligible,
     customTermsDays: profile.customTermsDays || null,
     notes: profile.notes || '',
     reminderDate: profile.reminderDate || '',
@@ -273,6 +277,8 @@ export function profileIsConfigured(profile) {
   return (
     profile.paymentMethodId !== empty.paymentMethodId ||
     profile.criticalityId !== empty.criticalityId ||
+    profile.natureId !== empty.natureId ||
+    !!profile.is1099Eligible !== empty.is1099Eligible ||
     profile.paymentTermsId !== empty.paymentTermsId ||
     (profile.notes && profile.notes.trim()) ||
     profile.reminderDate ||

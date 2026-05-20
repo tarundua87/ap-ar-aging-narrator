@@ -29,6 +29,7 @@ function InlineSelect({ value, onChange, options, withIcons = false }) {
 function VendorReviewRow({ vendor, draft, onChange, suggestion, sourceClientName, onAcceptSuggestion, onDismissSuggestion, suggestionDismissed }) {
   const paymentMethods = getEnabledItems('paymentMethods')
   const criticalityLevels = getEnabledItems('criticalityLevels')
+  const vendorNatures = getEnabledItems('vendorNatures')
   const actionFlags = getEnabledItems('actionFlags')
 
   const update = (key, value) => onChange({ ...draft, [key]: value })
@@ -69,6 +70,17 @@ function VendorReviewRow({ vendor, draft, onChange, suggestion, sourceClientName
       </td>
       <td className="px-3 py-3 align-top" style={{ minWidth: '140px' }}>
         <InlineSelect value={draft.criticalityId} onChange={(v) => update('criticalityId', v)} options={criticalityLevels} />
+      </td>
+      <td className="px-3 py-3 align-top" style={{ minWidth: '160px' }}>
+        <InlineSelect value={draft.natureId || 'other'} onChange={(v) => update('natureId', v)} options={vendorNatures} withIcons />
+      </td>
+      <td className="px-3 py-3 align-top text-center" style={{ minWidth: '60px' }}>
+        <input
+          type="checkbox"
+          checked={!!draft.is1099Eligible}
+          onChange={(e) => update('is1099Eligible', e.target.checked)}
+          style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+        />
       </td>
       <td className="px-3 py-3 align-top" style={{ minWidth: '180px' }}>
         <InlineSelect value={draft.actionFlagId} onChange={(v) => update('actionFlagId', v)} options={actionFlags} withIcons />
@@ -172,12 +184,14 @@ export default function NewVendorsModal({
         <div className="px-6 py-5" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
           <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
             <div style={{ overflowX: 'auto' }}>
-              <table className="w-full text-xs" style={{ minWidth: '900px' }}>
+            <table className="w-full text-xs" style={{ minWidth: '1100px' }}>
                 <thead style={{ background: 'var(--ink)' }}>
                   <tr>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)', minWidth: '240px' }}>Vendor</th>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Payment Method</th>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Criticality</th>
+                    <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Nature</th>
+                    <th className="text-center px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>1099</th>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Action Flag</th>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Quick Note</th>
                   </tr>

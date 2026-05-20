@@ -154,10 +154,40 @@ export default function VendorTriage({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{vendor.name}</p>
-                    <p className="text-xs mt-0.5" style={{ color: isSelected ? '#9ca3af' : 'var(--muted)' }}>
-                      ${vendor.aging.totalAP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · {vendor.invoiceCount} invoice{vendor.invoiceCount !== 1 ? 's' : ''}
-                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-medium truncate">{vendor.name}</p>
+                      {profile?.is1099Eligible && (
+                        <span
+                          title="1099 Eligible"
+                          className="text-xs px-1.5 py-0.5 rounded shrink-0"
+                          style={{
+                            background: isSelected ? '#1e3a8a' : '#dbeafe',
+                            color: isSelected ? '#bfdbfe' : '#1e3a8a',
+                            fontWeight: 600,
+                            fontSize: '0.65rem',
+                            letterSpacing: '0.04em',
+                          }}
+                        >
+                          1099
+                        </span>
+                      )}
+                    </div>
+                    {(() => {
+                      const natureItem = profile?.natureId ? getItemById('vendorNatures', profile.natureId) : null
+                      const showNature = natureItem && profile.natureId !== 'other'
+                      return (
+                        <p className="text-xs mt-0.5" style={{ color: isSelected ? '#9ca3af' : 'var(--muted)' }}>
+                          {showNature && (
+                            <>
+                              {natureItem.meta?.icon ? natureItem.meta.icon + ' ' : ''}
+                              {natureItem.label}
+                              {' · '}
+                            </>
+                          )}
+                          ${vendor.aging.totalAP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · {vendor.invoiceCount} invoice{vendor.invoiceCount !== 1 ? 's' : ''}
+                        </p>
+                      )
+                    })()}
                     <ProfileIndicators profile={profile} isSelected={isSelected} />
                   </div>
                   <span className="text-xs px-2 py-0.5 rounded-full shrink-0 mt-0.5" style={{

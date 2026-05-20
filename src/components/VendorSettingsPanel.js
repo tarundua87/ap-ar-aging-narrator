@@ -1,0 +1,383 @@
+import { useState } from 'react'
+import {
+  getClientProfiles, saveVendorProfile, emptyProfile,
+  describeProfile, profileIsConfigured,
+  getInvoiceOverrides, saveInvoiceOverride, emptyInvoiceOverride, invoiceOverrideIsConfigured,
+  autoSuggestProfile,
+} from '../lib/vendorProfiles'
+import { getEnabledItems, getItemById } from '../lib/masterConfig'
+import VendorProfileForm from './VendorProfileForm'
+
+function fmt(n) {
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function InlineSelect({ value, onChange, options, withIcons = false }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="text-xs px-2 py-1 rounded outline-none w-full"
+      style={{ border: '1px solid var(--border)', background: 'white' }}
+    >
+      {options.map(opt => (
+        <option key={opt.id} value={opt.id}>
+          {withIcons && opt.meta?.icon ? opt.meta.icon + ' ' : ''}{opt.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+// ── Invoice overrides editor for a single vendor ──────────
+function InvoiceOverridesTable({ clientSlug, reportId, vendor, overrides, onChange }) {
+  const invoiceFlags = getEnabledItems('invoiceFlags')
+  const invoiceStatuses = getEnabledItems('invoiceStatuses')
+
+  const updateOverride = (invoiceNumber, key, value) => {
+    const current = overrides[vendor.name + '||' + invoiceNumber] || emptyInvoiceOverride()
+    const next = { ...current, [key]: value }
+    saveInvoiceOverride(clientSlug, reportId, vendor.name, invoiceNumber, next)
+    onChange()
+  }
+
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+      <table className="w-full text-xs">
+        <thead style={{ background: '#faf9f7' }}>
+          <tr style={{ borderBottom: '1px solid var(--border)' }}>
+            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Invoice #</th>
+            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Days Past Due</th>
+            <th className="text-right px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Open Balance</th>
+            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Flag</th>
+            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Status</th>
+            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {vendor.invoices.map((inv, idx) => {
+            const override = overrides[vendor.name + '||' + inv.invoiceNumber] || emptyInvoiceOverride()
+            return (
+              <tr key={idx} style={{ borderBottom: idx < vendor.invoices.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                <td className="px-3 py-2 font-medium">{inv.invoiceNumber}</td>
+                <td className="px-3 py-2" style={{ color: inv.daysPastDue > 90 ? '#c8401a' : inv.daysPastDue > 60 ? '#ea580c' : inv.daysPastDue > 0 ? '#b87d00' : 'var(--muted)' }}>
+                  {inv.daysPastDue > 0 ? `${inv.daysPastDue}d` : '—'}
+                </td>
+                <td className="px-3 py-2 text-right font-semibold" style={{ color: inv.openBalance < 0 ? '#15803d' : 'var(--ink)' }}>
+                  {fmt(inv.openBalance)}
+                </td>
+                <td className="px-3 py-2" style={{ minWidth: '140px' }}>
+                  <InlineSelect
+                    value={override.flagId}
+                    onChange={(v) => updateOverride(inv.invoiceNumber, 'flagId', v)}
+                    options={invoiceFlags}
+                    withIcons
+                  />
+                </td>
+                <td className="px-3 py-2" style={{ minWidth: '140px' }}>
+                  <InlineSelect
+                    value={override.statusId}
+                    onChange={(v) => updateOverride(inv.invoiceNumber, 'statusId', v)}
+                    options={invoiceStatuses}
+                  />
+                </td>
+                <td className="px-3 py-2" style={{ minWidth: '160px' }}>
+                  <input
+                    type="text"
+                    value={override.notes || ''}
+                    onChange={(e) => updateOverride(inv.invoiceNumber, 'notes', e.target.value)}
+                    className="text-xs px-2 py-1 rounded outline-none w-full"
+                    style={{ border: '1px solid var(--border)', background: 'white' }}
+                    placeholder="Optional note…"
+                  />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Deep-edit panel for a single vendor ───────────────────
+function VendorDeepEdit({ clientSlug, reportId, vendor, profile, suggestion, overrides, onSaveProfile, onOverridesChange, onBack }) {
+  const [tab, setTab] = useState('profile') // 'profile' | 'invoices'
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={onBack}
+          className="text-xs px-3 py-1.5 rounded transition-all"
+          style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
+        >
+          ← All Vendors
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--accent)' }}>Editing</p>
+          <h3 className="text-base font-bold truncate" style={{ fontFamily: 'Playfair Display, serif' }}>{vendor.name}</h3>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4" style={{ borderBottom: '1px solid var(--border)' }}>
+        <button
+          onClick={() => setTab('profile')}
+          className="text-sm px-4 py-2 transition-all"
+          style={{
+            color: tab === 'profile' ? 'var(--ink)' : 'var(--muted)',
+            borderBottom: tab === 'profile' ? '2px solid var(--accent)' : '2px solid transparent',
+            fontWeight: tab === 'profile' ? 600 : 400,
+          }}
+        >
+          Vendor Profile
+        </button>
+        <button
+          onClick={() => setTab('invoices')}
+          className="text-sm px-4 py-2 transition-all"
+          style={{
+            color: tab === 'invoices' ? 'var(--ink)' : 'var(--muted)',
+            borderBottom: tab === 'invoices' ? '2px solid var(--accent)' : '2px solid transparent',
+            fontWeight: tab === 'invoices' ? 600 : 400,
+          }}
+        >
+          Invoice Actions ({vendor.invoices.length})
+        </button>
+      </div>
+
+      {tab === 'profile' && (
+        <VendorProfileForm
+          vendorName={vendor.name}
+          initialProfile={profile}
+          suggestion={suggestion}
+          onSave={(p) => { onSaveProfile(p); onBack() }}
+          onCancel={onBack}
+          compact
+        />
+      )}
+
+      {tab === 'invoices' && (
+        <InvoiceOverridesTable
+          clientSlug={clientSlug}
+          reportId={reportId}
+          vendor={vendor}
+          overrides={overrides}
+          onChange={onOverridesChange}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Main bulk edit table ──────────────────────────────────
+function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate, onDeepEdit }) {
+  const paymentMethods = getEnabledItems('paymentMethods')
+  const criticalityLevels = getEnabledItems('criticalityLevels')
+  const actionFlags = getEnabledItems('actionFlags')
+  const statuses = getEnabledItems('statuses')
+
+  const updateField = (vendorName, key, value) => {
+    const current = profiles[vendorName] || emptyProfile()
+    const next = { ...current, [key]: value }
+    saveVendorProfile(clientSlug, vendorName, next)
+    onUpdate()
+  }
+
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="w-full text-xs" style={{ minWidth: '900px' }}>
+          <thead style={{ background: 'var(--ink)' }}>
+            <tr>
+              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Vendor</th>
+              <th className="text-right px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Total A/P</th>
+              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Payment</th>
+              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Criticality</th>
+              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Action Flag</th>
+              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Status</th>
+              <th className="px-3 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {vendors.map((vendor, idx) => {
+              const profile = profiles[vendor.name] || emptyProfile()
+              const overrides = overridesByVendor[vendor.name] || {}
+              const overrideCount = Object.values(overrides).filter(o => invoiceOverrideIsConfigured(o)).length
+              const isConfigured = profileIsConfigured(profile)
+
+              return (
+                <tr key={vendor.name} style={{ borderBottom: idx < vendors.length - 1 ? '1px solid var(--border)' : 'none', background: idx % 2 === 1 ? '#faf9f7' : 'white' }}>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => onDeepEdit(vendor.name)}
+                        className="text-xs font-medium text-left transition-all hover:underline"
+                        style={{ color: 'var(--ink)' }}
+                      >
+                        {vendor.name}
+                      </button>
+                      {isConfigured && (
+                        <span title="Profile configured" style={{ color: '#15803d' }}>●</span>
+                      )}
+                      {overrideCount > 0 && (
+                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#78350f' }} title={`${overrideCount} invoice override${overrideCount !== 1 ? 's' : ''}`}>
+                          {overrideCount} inv
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                      {vendor.invoiceCount} invoice{vendor.invoiceCount !== 1 ? 's' : ''}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium">{fmt(vendor.aging.totalAP)}</td>
+                  <td className="px-3 py-2" style={{ minWidth: '160px' }}>
+                    <InlineSelect
+                      value={profile.paymentMethodId}
+                      onChange={(v) => updateField(vendor.name, 'paymentMethodId', v)}
+                      options={paymentMethods}
+                    />
+                  </td>
+                  <td className="px-3 py-2" style={{ minWidth: '140px' }}>
+                    <InlineSelect
+                      value={profile.criticalityId}
+                      onChange={(v) => updateField(vendor.name, 'criticalityId', v)}
+                      options={criticalityLevels}
+                    />
+                  </td>
+                  <td className="px-3 py-2" style={{ minWidth: '180px' }}>
+                    <InlineSelect
+                      value={profile.actionFlagId}
+                      onChange={(v) => updateField(vendor.name, 'actionFlagId', v)}
+                      options={actionFlags}
+                      withIcons
+                    />
+                  </td>
+                  <td className="px-3 py-2" style={{ minWidth: '140px' }}>
+                    <InlineSelect
+                      value={profile.statusId}
+                      onChange={(v) => updateField(vendor.name, 'statusId', v)}
+                      options={statuses}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => onDeepEdit(vendor.name)}
+                      className="text-xs px-2 py-1 rounded transition-all"
+                      style={{ color: 'var(--accent)', border: '1px solid var(--border)' }}
+                    >
+                      Edit full
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Top-level component ───────────────────────────────────
+export default function VendorSettingsPanel({ clientSlug, clientName, reportId, vendors, onClose, getSourceClientName }) {
+  const [, setTick] = useState(0)
+  const refresh = () => setTick(t => t + 1)
+
+  const [deepEditVendor, setDeepEditVendor] = useState(null) // vendor name string
+
+  const profiles = getClientProfiles(clientSlug)
+  const overridesFlat = getInvoiceOverrides(clientSlug, reportId)
+
+  // Group overrides by vendor name for easy lookup
+  const overridesByVendor = {}
+  for (const [key, override] of Object.entries(overridesFlat)) {
+    const [vendorName] = key.split('||')
+    if (!overridesByVendor[vendorName]) overridesByVendor[vendorName] = {}
+    overridesByVendor[vendorName][key] = override
+  }
+
+  const handleSaveProfile = (vendorName, profile) => {
+    saveVendorProfile(clientSlug, vendorName, profile)
+    refresh()
+  }
+
+  const deepEditVendorObj = vendors.find(v => v.name === deepEditVendor)
+  const deepEditProfile = deepEditVendor ? (profiles[deepEditVendor] || emptyProfile()) : null
+  const deepEditSuggestion = deepEditVendor && !profileIsConfigured(deepEditProfile)
+    ? (() => {
+        const s = autoSuggestProfile(deepEditVendor, clientSlug)
+        if (!s) return null
+        return {
+          profile: s.profile,
+          sourceClientSlug: s.sourceClientSlug,
+          sourceClientName: getSourceClientName ? getSourceClientName(s.sourceClientSlug) : s.sourceClientSlug,
+        }
+      })()
+    : null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto"
+      style={{ background: 'rgba(15,17,23,0.6)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl my-8 mx-4 w-full"
+        style={{ maxWidth: '1100px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 flex items-center justify-between rounded-t-xl" style={{ background: 'var(--ink)' }}>
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--accent)' }}>Configure Vendors</p>
+            <h2 className="text-xl font-bold truncate" style={{ color: 'var(--paper)', fontFamily: 'Playfair Display, serif' }}>
+              {clientName}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-sm px-3 py-1.5 rounded transition-all shrink-0 ml-3"
+            style={{ color: 'var(--paper)', background: '#374151' }}
+          >
+            ✕ Close
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5" style={{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
+          {deepEditVendor && deepEditVendorObj ? (
+            <VendorDeepEdit
+              clientSlug={clientSlug}
+              reportId={reportId}
+              vendor={deepEditVendorObj}
+              profile={deepEditProfile}
+              suggestion={deepEditSuggestion}
+              overrides={overridesByVendor[deepEditVendor] || {}}
+              onSaveProfile={(p) => handleSaveProfile(deepEditVendor, p)}
+              onOverridesChange={refresh}
+              onBack={() => setDeepEditVendor(null)}
+            />
+          ) : (
+            <>
+              <div className="mb-4">
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                  Edit payment terms, criticality, and status for each vendor. Click a vendor name to access invoice-level overrides.
+                  Changes save automatically.
+                </p>
+              </div>
+              <BulkTable
+                vendors={vendors}
+                profiles={profiles}
+                overridesByVendor={overridesByVendor}
+                clientSlug={clientSlug}
+                onUpdate={refresh}
+                onDeepEdit={setDeepEditVendor}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -57,6 +57,7 @@ export default function ClientSummary({
   onSelectPeriod,
   onBackToLibrary,
   onUploadNewPeriod,
+  onConfigureVendors,
 }) {
   const overduePercent = aggregate.totalAP > 0
     ? ((aggregate.overdueTotal / aggregate.totalAP) * 100).toFixed(1)
@@ -82,7 +83,16 @@ export default function ClientSummary({
             </p>
           )}
         </div>
-        <div className="shrink-0 flex items-center gap-2">
+        <div className="shrink-0 flex items-center gap-2 flex-wrap">
+          {onConfigureVendors && (
+            <button
+              onClick={onConfigureVendors}
+              className="text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-90 flex items-center gap-1.5"
+              style={{ background: 'rgba(255,255,255,0.08)', color: '#d1d5db', border: '1px solid rgba(255,255,255,0.15)', fontWeight: 500 }}
+            >
+              ⚙ Configure Vendors
+            </button>
+          )}
           {onUploadNewPeriod && (
             <button
               onClick={onUploadNewPeriod}

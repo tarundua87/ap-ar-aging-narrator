@@ -6,6 +6,11 @@ import UploadPanel from '../components/UploadPanel'
 import ClientSummary from '../components/ClientSummary'
 import VendorTriage from '../components/VendorTriage'
 import NarrativePanel from '../components/NarrativePanel'
+import MasterConfigPanel from '../components/MasterConfigPanel'
+import VendorSettingsPanel from '../components/VendorSettingsPanel'
+import ClientGroupsPanel from '../components/ClientGroupsPanel'
+import NewVendorsModal from '../components/NewVendorsModal'
+import VendorProfileForm from '../components/VendorProfileForm'
 import {
   listClients, getClient, getLatestReport, getReport,
   saveReport, saveVendorNarrative, saveClientNarrative,
@@ -13,6 +18,12 @@ import {
 } from '../lib/storage'
 import { exportReportPDF, exportVendorPDF } from '../lib/exportPDF'
 import { exportReportWord, exportVendorWord } from '../lib/exportWord'
+import {
+  getClientProfiles, getVendorProfile, saveVendorProfile,
+  getInvoiceOverrides, findUnprofiledVendors,
+  describeProfile, describeInvoiceOverride,
+  autoSuggestProfile,
+} from '../lib/vendorProfiles'
 
 const VIEW_LIBRARY = 'library'
 const VIEW_UPLOAD = 'upload'
@@ -43,13 +54,99 @@ export default function Dashboard() {
   const [exportPreparing, setExportPreparing] = useState(false)
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 })
 
-  // Initial load
+  // Modal states
+  const [showMasterConfig, setShowMasterConfig] = useState(false)
+  const [showVendorSettings, setShowVendorSettings] = useState(false)
+  const [showGroupsPanel, setShowGroupsPanel] = useState(false)
+  const [quickEditVendor, setQuickEditVendor] = useState(null) // string vendor name
+  const [newVendorsToReview, setNewVendorsToReview] = useState(null) // {clientSlug, clientName, vendors[]}
+
+  // Profile tick to force re-renders when profiles or overrides change
+  const [profileTick, setProfileTick] = useState(0)
+  const bumpProfiles = () => setProfileTick(t => t + 1)
+
+  // ── Initial load + view restoration ──────────────
+
   useEffect(() => {
     refreshLibrary()
+    try {
+      const saved = window.localStorage.getItem('ap-narrator:viewState')
+      if (!saved) return
+      const state = JSON.parse(saved)
+      if (!state || !state.view) return
+
+      if (state.view === VIEW_REPORT && state.slug && state.reportId) {
+        const report = getReport(state.slug, state.reportId)
+        if (report) {
+          setActiveSlug(state.slug)
+          setActiveReportId(state.reportId)
+          setActiveReport(report)
+          if (state.vendorName) {
+            const v = report.parsedData?.vendors?.find(v => v.name === state.vendorName)
+            if (v) {
+              setSelectedVendor(v)
+              const cached = report.vendorNarratives?.[v.name]
+              if (cached) setVendorNarrative(cached)
+            }
+          }
+          setView(VIEW_REPORT)
+        }
+      } else if (state.view === VIEW_UPLOAD) {
+        setView(VIEW_UPLOAD)
+      } else if (state.view === VIEW_UPLOAD_SCOPED && state.slug) {
+        if (getClient(state.slug)) {
+          setActiveSlug(state.slug)
+          if (state.reportId) {
+            const report = getReport(state.slug, state.reportId)
+            if (report) {
+              setActiveReportId(state.reportId)
+              setActiveReport(report)
+            }
+          }
+          setView(VIEW_UPLOAD_SCOPED)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to restore view state', err)
+    }
   }, [])
+
+  useEffect(() => {
+    try {
+      const state = {
+        view,
+        slug: activeSlug,
+        reportId: activeReportId,
+        vendorName: selectedVendor?.name || null,
+      }
+      window.localStorage.setItem('ap-narrator:viewState', JSON.stringify(state))
+    } catch {}
+  }, [view, activeSlug, activeReportId, selectedVendor])
 
   const refreshLibrary = () => {
     setClients(listClients())
+  }
+
+  // ── Profile helpers ──────────────────────────────
+
+  const currentProfilesMap = activeSlug ? getClientProfiles(activeSlug) : {}
+  const currentOverridesMap = (activeSlug && activeReportId) ? getInvoiceOverrides(activeSlug, activeReportId) : {}
+
+  // Convert profile IDs to labels (the AI prompt expects labels, not IDs)
+  const buildPromptContext = () => {
+    const profilesForPrompt = {}
+    for (const [vendorName, profile] of Object.entries(currentProfilesMap)) {
+      profilesForPrompt[vendorName] = describeProfile(profile)
+    }
+    const overridesForPrompt = {}
+    for (const [key, override] of Object.entries(currentOverridesMap)) {
+      overridesForPrompt[key] = describeInvoiceOverride(override)
+    }
+    return { vendorProfiles: profilesForPrompt, invoiceOverrides: overridesForPrompt }
+  }
+
+  const getSourceClientName = (slug) => {
+    return getClient(slug)?.displayName || slug
   }
 
   // ── Library actions ──────────────────────────────
@@ -76,20 +173,15 @@ export default function Dashboard() {
     setView(VIEW_REPORT)
   }
 
-  const handleNewUpload = () => {
-    setView(VIEW_UPLOAD)
-  }
-
-  const handleUploadNewPeriod = () => {
-    setView(VIEW_UPLOAD_SCOPED)
-  }
+  const handleNewUpload = () => setView(VIEW_UPLOAD)
+  const handleUploadNewPeriod = () => setView(VIEW_UPLOAD_SCOPED)
 
   const handleDeleteClient = (slug) => {
     deleteClient(slug)
     refreshLibrary()
   }
 
-  // ── Upload action ────────────────────────────────
+  // ── Upload action with new-vendor review ─────────
 
   const handleDataLoaded = async (parsedResult) => {
     const { clientName, asOfDate, vendors, aggregate, invoiceCount } = parsedResult
@@ -110,7 +202,37 @@ export default function Dashboard() {
     setView(VIEW_REPORT)
     refreshLibrary()
 
-    generateClientNarrative(saveResult.slug, saveResult.reportId, clientName, vendors, aggregate)
+    // Check for vendors that don't have profiles yet — show the review modal
+    const unprofiled = findUnprofiledVendors(saveResult.slug, vendors)
+    if (unprofiled.length > 0) {
+      setNewVendorsToReview({
+        clientSlug: saveResult.slug,
+        clientName,
+        vendors: unprofiled,
+      })
+      // Don't generate the client narrative yet — wait for review to complete
+    } else {
+      // No new vendors to review — generate immediately
+      generateClientNarrative(saveResult.slug, saveResult.reportId, clientName, vendors, aggregate)
+    }
+  }
+
+  const handleNewVendorsComplete = () => {
+    const target = newVendorsToReview
+    setNewVendorsToReview(null)
+    bumpProfiles()
+    // Now generate the client narrative with profiles in place
+    if (target && activeReport) {
+      generateClientNarrative(target.clientSlug, activeReportId, target.clientName, activeReport.parsedData.vendors, activeReport.parsedData.aggregate)
+    }
+  }
+
+  const handleNewVendorsSkip = () => {
+    const target = newVendorsToReview
+    setNewVendorsToReview(null)
+    if (target && activeReport) {
+      generateClientNarrative(target.clientSlug, activeReportId, target.clientName, activeReport.parsedData.vendors, activeReport.parsedData.aggregate)
+    }
   }
 
   // ── Narrative generation ────────────────────────
@@ -118,10 +240,18 @@ export default function Dashboard() {
   const generateClientNarrative = async (slug, reportId, clientName, vendors, aggregate) => {
     setLoadingClient(true)
     try {
+      const ctx = buildPromptContext()
       const res = await fetch('/api/generate-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'client', clientName, vendors, aggregate }),
+        body: JSON.stringify({
+          mode: 'client',
+          clientName,
+          vendors,
+          aggregate,
+          vendorProfiles: ctx.vendorProfiles,
+          invoiceOverrides: ctx.invoiceOverrides,
+        }),
       })
       const data = await res.json()
       const narrative = data.narrative || 'Error generating narrative.'
@@ -138,10 +268,17 @@ export default function Dashboard() {
     setLoadingVendor(true)
     setVendorNarrative(null)
     try {
+      const ctx = buildPromptContext()
       const res = await fetch('/api/generate-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'vendor', clientName: activeSlug, vendor }),
+        body: JSON.stringify({
+          mode: 'vendor',
+          clientName: activeSlug,
+          vendor,
+          vendorProfiles: ctx.vendorProfiles,
+          invoiceOverrides: ctx.invoiceOverrides,
+        }),
       })
       const data = await res.json()
       const narrative = data.narrative || 'Error generating narrative.'
@@ -155,13 +292,19 @@ export default function Dashboard() {
     }
   }
 
-  // Silent vendor narrative for batch export prep
   const generateVendorNarrativeSilent = async (vendor) => {
     try {
+      const ctx = buildPromptContext()
       const res = await fetch('/api/generate-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'vendor', clientName: activeSlug, vendor }),
+        body: JSON.stringify({
+          mode: 'vendor',
+          clientName: activeSlug,
+          vendor,
+          vendorProfiles: ctx.vendorProfiles,
+          invoiceOverrides: ctx.invoiceOverrides,
+        }),
       })
       const data = await res.json()
       return { vendorName: vendor.name, narrative: data.narrative || 'No narrative generated.' }
@@ -247,6 +390,18 @@ export default function Dashboard() {
     }
   }
 
+  // Quick-edit a single vendor from the triage queue
+  const handleConfigureVendor = (vendorName) => {
+    setQuickEditVendor(vendorName)
+  }
+
+  const handleQuickEditSave = (profile) => {
+    if (!quickEditVendor) return
+    saveVendorProfile(activeSlug, quickEditVendor, profile)
+    setQuickEditVendor(null)
+    bumpProfiles()
+  }
+
   // ── Export handlers ──────────────────────────────
 
   const handleExportPDF = async () => {
@@ -323,6 +478,19 @@ export default function Dashboard() {
 
   // ── Render ───────────────────────────────────────
 
+  // Build the suggestion for the quick-edit modal (if vendor not yet configured)
+  const quickEditProfile = quickEditVendor ? getVendorProfile(activeSlug, quickEditVendor) : null
+  const quickEditSuggestion = (() => {
+    if (!quickEditVendor || !activeSlug) return null
+    const s = autoSuggestProfile(quickEditVendor, activeSlug)
+    if (!s) return null
+    return {
+      profile: s.profile,
+      sourceClientSlug: s.sourceClientSlug,
+      sourceClientName: getSourceClientName(s.sourceClientSlug),
+    }
+  })()
+
   return (
     <>
       <Head>
@@ -331,7 +499,7 @@ export default function Dashboard() {
       </Head>
 
       <div className="min-h-screen" style={{ background: 'var(--paper)' }}>
-        <Header />
+        <Header onOpenSettings={() => setShowMasterConfig(true)} />
 
         <main className="max-w-7xl mx-auto px-6 py-8">
           {view === VIEW_LIBRARY && (
@@ -341,6 +509,7 @@ export default function Dashboard() {
               onOpenPeriod={handleOpenPeriod}
               onNewUpload={handleNewUpload}
               onDeleteClient={handleDeleteClient}
+              onManageGroups={() => setShowGroupsPanel(true)}
             />
           )}
 
@@ -354,7 +523,17 @@ export default function Dashboard() {
           {view === VIEW_UPLOAD_SCOPED && (
             <UploadPanel
               onDataLoaded={handleDataLoaded}
-              onCancel={() => setView(VIEW_REPORT)}
+              onCancel={() => {
+                if (activeSlug && activeReportId) {
+                  const report = getReport(activeSlug, activeReportId)
+                  if (report) {
+                    setActiveReport(report)
+                    setView(VIEW_REPORT)
+                    return
+                  }
+                }
+                handleBackToLibrary()
+              }}
               expectedClient={getClient(activeSlug)?.displayName || ''}
             />
           )}
@@ -370,6 +549,7 @@ export default function Dashboard() {
                 onSelectPeriod={handleSelectPeriod}
                 onBackToLibrary={handleBackToLibrary}
                 onUploadNewPeriod={handleUploadNewPeriod}
+                onConfigureVendors={() => setShowVendorSettings(true)}
               />
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
@@ -379,6 +559,8 @@ export default function Dashboard() {
                     selectedVendor={selectedVendor}
                     onSelectVendor={handleSelectVendor}
                     onBackToClient={handleBackToClient}
+                    onConfigureVendor={handleConfigureVendor}
+                    vendorProfiles={currentProfilesMap}
                   />
                 </div>
                 <div className="lg:col-span-2">
@@ -400,6 +582,63 @@ export default function Dashboard() {
             </>
           )}
         </main>
+
+        {/* ── Modals ─────────────────────────────── */}
+
+        {showMasterConfig && (
+          <MasterConfigPanel onClose={() => setShowMasterConfig(false)} />
+        )}
+
+        {showVendorSettings && activeReport && (
+          <VendorSettingsPanel
+            clientSlug={activeSlug}
+            clientName={getClient(activeSlug)?.displayName || 'Client'}
+            reportId={activeReportId}
+            vendors={activeReport.parsedData.vendors}
+            onClose={() => { setShowVendorSettings(false); bumpProfiles() }}
+            getSourceClientName={getSourceClientName}
+          />
+        )}
+
+        {showGroupsPanel && (
+          <ClientGroupsPanel
+            clients={clients}
+            onClose={() => { setShowGroupsPanel(false); refreshLibrary() }}
+          />
+        )}
+
+        {quickEditVendor && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4"
+            style={{ background: 'rgba(15,17,23,0.6)', backdropFilter: 'blur(4px)' }}
+            onClick={() => setQuickEditVendor(null)}
+          >
+            <div
+              className="w-full"
+              style={{ maxWidth: '700px' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <VendorProfileForm
+                vendorName={quickEditVendor}
+                initialProfile={quickEditProfile}
+                suggestion={quickEditSuggestion}
+                onSave={handleQuickEditSave}
+                onCancel={() => setQuickEditVendor(null)}
+              />
+            </div>
+          </div>
+        )}
+
+        {newVendorsToReview && (
+          <NewVendorsModal
+            clientSlug={newVendorsToReview.clientSlug}
+            clientName={newVendorsToReview.clientName}
+            newVendors={newVendorsToReview.vendors}
+            onComplete={handleNewVendorsComplete}
+            onSkip={handleNewVendorsSkip}
+            getSourceClientName={getSourceClientName}
+          />
+        )}
       </div>
     </>
   )

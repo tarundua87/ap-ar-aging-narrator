@@ -179,5 +179,12 @@ export function parseAPAgingDetail(csvText) {
     aggregate.oldestInvoiceDays = aggregate.topOldestInvoices[0].daysPastDue
   }
 
-  return { clientName, asOfDate, vendors, aggregate, invoiceCount: invoices.length }
+  return {
+    clientName,
+    asOfDate,
+    vendors,
+    aggregate,
+    invoiceCount: aggregate.invoiceCount,
+    rawCsv: csvText,
+  }
 }

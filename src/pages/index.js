@@ -54,6 +54,9 @@ export default function Dashboard() {
   const [exportPreparing, setExportPreparing] = useState(false)
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 })
 
+  // Draft email regeneration state (for the Draft Email tab fallback)
+  const [regeneratingEmail, setRegeneratingEmail] = useState(false)
+
   // Modal states
   const [showMasterConfig, setShowMasterConfig] = useState(false)
   const [showVendorSettings, setShowVendorSettings] = useState(false)
@@ -184,13 +187,14 @@ export default function Dashboard() {
   // ── Upload action with new-vendor review ─────────
 
   const handleDataLoaded = async (parsedResult) => {
-    const { clientName, asOfDate, vendors, aggregate, invoiceCount } = parsedResult
+    const { clientName, asOfDate, vendors, aggregate, invoiceCount, rawCsv } = parsedResult
 
     const saveResult = saveReport({
       clientName,
       asOfDate,
       parsedData: { vendors, aggregate, invoiceCount },
       clientNarrative: null,
+      rawCsv,
     })
 
     const justSaved = getReport(saveResult.slug, saveResult.reportId)
@@ -390,6 +394,25 @@ export default function Dashboard() {
     }
   }
 
+  // Regenerate draft email as a fallback when extraction fails.
+  // Calls the AI to produce just the draft section, then merges it into the narrative.
+  const handleRegenerateDraftEmail = async () => {
+    if (!activeReport) return
+    setRegeneratingEmail(true)
+    try {
+      if (selectedVendor) {
+        // Vendor mode — regenerate the full vendor narrative (it includes the draft email)
+        await generateVendorNarrative(selectedVendor)
+      } else {
+        // Client mode — regenerate the full client narrative
+        const { vendors, aggregate } = activeReport.parsedData
+        await generateClientNarrative(activeSlug, activeReportId, getClient(activeSlug).displayName, vendors, aggregate)
+      }
+    } finally {
+      setRegeneratingEmail(false)
+    }
+  }
+
   // Quick-edit a single vendor from the triage queue
   const handleConfigureVendor = (vendorName) => {
     setQuickEditVendor(vendorName)
@@ -564,11 +587,13 @@ export default function Dashboard() {
                   />
                 </div>
                 <div className="lg:col-span-2">
-                  <NarrativePanel
+                <NarrativePanel
                     clientName={getClient(activeSlug)?.displayName || 'Client'}
                     asOfDate={activeReport.asOfDate}
                     vendor={selectedVendor}
                     aggregate={activeReport.parsedData.aggregate}
+                    parsedData={activeReport.parsedData}
+                    rawCsv={activeReport.rawCsv}
                     narrative={selectedVendor ? vendorNarrative : activeReport.clientNarrative}
                     loading={selectedVendor ? loadingVendor : loadingClient}
                     onRefresh={handleRefreshNarrative}
@@ -576,6 +601,10 @@ export default function Dashboard() {
                     onExportWord={handleExportWord}
                     exportPreparing={exportPreparing}
                     exportProgress={exportProgress}
+                    vendorProfile={selectedVendor ? currentProfilesMap[selectedVendor.name] : null}
+                    onEditVendorProfile={selectedVendor ? () => setQuickEditVendor(selectedVendor.name) : null}
+                    onRegenerateDraftEmail={handleRegenerateDraftEmail}
+                    regeneratingEmail={regeneratingEmail}
                   />
                 </div>
               </div>

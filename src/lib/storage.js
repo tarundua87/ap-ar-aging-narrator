@@ -83,7 +83,7 @@ export function getLatestReport(slug) {
 
 // Save a freshly parsed report (creates client if new, adds new period if new)
 // Returns { slug, reportId, isNewClient, isNewPeriod }
-export function saveReport({ clientName, asOfDate, parsedData, clientNarrative }) {
+export function saveReport({ clientName, asOfDate, parsedData, clientNarrative, rawCsv }) {
   const all = readAll()
   const slug = slugify(clientName)
   const reportId = slugify(asOfDate || 'unknown-period')
@@ -107,6 +107,7 @@ export function saveReport({ clientName, asOfDate, parsedData, clientNarrative }
     asOfDate: asOfDate || 'Unknown period',
     uploadedAt: now,
     parsedData,
+    rawCsv: rawCsv || null,
     clientNarrative: clientNarrative || null,
     vendorNarratives: {},
   }

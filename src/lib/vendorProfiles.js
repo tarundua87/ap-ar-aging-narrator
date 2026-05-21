@@ -7,6 +7,7 @@
 //   "vendor-suggestions"             → global vendor-name → [prior profiles]
 
 import { getEnabledItems, getItemById } from './masterConfig'
+import { triggerOnVendorProfileSave, triggerOnInvoiceOverrideSave } from './actionItemTriggers'
 
 const PROFILES_KEY_PREFIX = 'vendor-profiles:'
 const INVOICE_OVERRIDES_KEY_PREFIX = 'invoice-overrides:'
@@ -68,6 +69,20 @@ export function saveVendorProfile(clientSlug, vendorName, profile) {
     all[vendorName] = enriched
     window.localStorage.setItem(PROFILES_KEY_PREFIX + clientSlug, JSON.stringify(all))
     addToSuggestionBank(vendorName, enriched, clientSlug)
+
+    // Fire action item triggers (auto-create reminders, holds, disputes)
+    try {
+      const profileDescribed = describeProfile(enriched)
+      triggerOnVendorProfileSave({
+        clientSlug,
+        vendorName,
+        profile: enriched,
+        profileDescribed,
+      })
+    } catch (err) {
+      console.error('Action item trigger failed (vendor)', err)
+    }
+
     return true
   } catch (err) {
     console.error('Failed to save vendor profile', err)
@@ -85,6 +100,22 @@ export function saveAllProfiles(clientSlug, profileMap) {
       addToSuggestionBank(vendorName, enriched[vendorName], clientSlug)
     }
     window.localStorage.setItem(PROFILES_KEY_PREFIX + clientSlug, JSON.stringify(enriched))
+
+    // Fire triggers for each vendor (e.g., bulk save from New Vendors Modal)
+    for (const [vendorName, profile] of Object.entries(enriched)) {
+      try {
+        const profileDescribed = describeProfile(profile)
+        triggerOnVendorProfileSave({
+          clientSlug,
+          vendorName,
+          profile,
+          profileDescribed,
+        })
+      } catch (err) {
+        console.error('Action item trigger failed (bulk vendor)', err)
+      }
+    }
+
     return true
   } catch (err) {
     console.error('Failed to save profiles', err)
@@ -134,11 +165,25 @@ export function saveInvoiceOverride(clientSlug, reportId, vendorName, invoiceNum
   if (!isBrowser() || !clientSlug || !reportId) return false
   try {
     const all = getInvoiceOverrides(clientSlug, reportId)
-    all[invoiceKey(vendorName, invoiceNumber)] = {
-      ...override,
-      updatedAt: new Date().toISOString(),
-    }
+    const enriched = { ...override, updatedAt: new Date().toISOString() }
+    all[invoiceKey(vendorName, invoiceNumber)] = enriched
     window.localStorage.setItem(invoiceOverridesKey(clientSlug, reportId), JSON.stringify(all))
+
+    // Fire invoice-level action item triggers
+    try {
+      const overrideDescribed = describeInvoiceOverride(enriched)
+      triggerOnInvoiceOverrideSave({
+        clientSlug,
+        reportId,
+        vendorName,
+        invoiceNumber,
+        override: enriched,
+        overrideDescribed,
+      })
+    } catch (err) {
+      console.error('Action item trigger failed (invoice)', err)
+    }
+
     return true
   } catch (err) {
     console.error('Failed to save invoice override', err)

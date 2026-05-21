@@ -1,32 +1,61 @@
 import { useState } from 'react'
 import {
-  getMasterConfig, addCustomItem, updateItemLabel,
+  getMasterConfig, addCustomItem, updateItemLabel, updateItemMeta,
   toggleItemEnabled, deleteCustomItem, resetToDefaults,
   CONFIG_CATEGORIES,
 } from '../lib/masterConfig'
 
-function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete }) {
+function CategorySection({ category, items, refresh }) {
   const [newLabel, setNewLabel] = useState('')
+  const [newDays, setNewDays] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editLabel, setEditLabel] = useState('')
+  const [editingMetaId, setEditingMetaId] = useState(null)
+  const [editDays, setEditDays] = useState('')
+
+  // Categories that have items with numeric "days" meta — show day editors
+  const supportsDays = category.key === 'actionItemSettings' || category.key === 'paymentTerms'
 
   const handleAdd = () => {
     if (!newLabel.trim()) return
-    onAdd(category.key, newLabel)
+    const meta = {}
+    if (supportsDays && newDays.trim() !== '') {
+      const n = parseInt(newDays, 10)
+      if (!isNaN(n) && n >= 0) meta.days = n
+    }
+    addCustomItem(category.key, newLabel.trim(), meta)
     setNewLabel('')
+    setNewDays('')
+    refresh()
   }
 
-  const startEdit = (item) => {
+  const startLabelEdit = (item) => {
     setEditingId(item.id)
     setEditLabel(item.label)
   }
 
-  const saveEdit = () => {
+  const saveLabelEdit = () => {
     if (editLabel.trim() && editingId) {
-      onRelabel(category.key, editingId, editLabel.trim())
+      updateItemLabel(category.key, editingId, editLabel.trim())
     }
     setEditingId(null)
     setEditLabel('')
+    refresh()
+  }
+
+  const startDaysEdit = (item) => {
+    setEditingMetaId(item.id)
+    setEditDays(String(item.meta?.days ?? ''))
+  }
+
+  const saveDaysEdit = (item) => {
+    const n = parseInt(editDays, 10)
+    if (!isNaN(n) && n >= 0) {
+      updateItemMeta(category.key, item.id, { ...(item.meta || {}), days: n })
+    }
+    setEditingMetaId(null)
+    setEditDays('')
+    refresh()
   }
 
   return (
@@ -38,7 +67,8 @@ function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete
 
       <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)', background: 'white' }}>
         {items.map((item, idx) => {
-          const isEditing = editingId === item.id
+          const isEditingLabel = editingId === item.id
+          const isEditingDays = editingMetaId === item.id
           return (
             <div
               key={item.id}
@@ -47,7 +77,7 @@ function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete
             >
               {/* Enable toggle */}
               <button
-                onClick={() => onToggle(category.key, item.id)}
+                onClick={() => { toggleItemEnabled(category.key, item.id); refresh() }}
                 className="text-xs px-2 py-1 rounded transition-all shrink-0"
                 style={{
                   background: item.enabled ? '#dcfce7' : '#f3f4f6',
@@ -62,14 +92,14 @@ function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete
 
               {/* Label / editor */}
               <div className="flex-1 min-w-0">
-                {isEditing ? (
+                {isEditingLabel ? (
                   <input
                     type="text"
                     value={editLabel}
                     onChange={(e) => setEditLabel(e.target.value)}
-                    onBlur={saveEdit}
+                    onBlur={saveLabelEdit}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveEdit()
+                      if (e.key === 'Enter') saveLabelEdit()
                       if (e.key === 'Escape') { setEditingId(null); setEditLabel('') }
                     }}
                     autoFocus
@@ -77,7 +107,7 @@ function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete
                     style={{ border: '1px solid var(--accent)', background: 'white' }}
                   />
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {item.meta?.icon && <span>{item.meta.icon}</span>}
                     <span className="text-sm" style={{ color: item.enabled ? 'var(--ink)' : 'var(--muted)' }}>
                       {item.label}
@@ -85,10 +115,35 @@ function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete
                     {item.meta?.description && (
                       <span className="text-xs" style={{ color: 'var(--muted)' }}>· {item.meta.description}</span>
                     )}
-                    {item.meta?.days !== undefined && item.meta?.days !== null && (
-                      <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#f0ece6', color: 'var(--muted)' }}>
-                        {item.meta.days}d
-                      </span>
+                    {/* Days display / editor for items that support it */}
+                    {item.meta?.days !== undefined && item.meta?.days !== null && !isEditingDays && (
+                      <button
+                        onClick={() => startDaysEdit(item)}
+                        className="text-xs px-1.5 py-0.5 rounded transition-all hover:opacity-90"
+                        style={{ background: '#fef3c7', color: '#78350f', fontWeight: 600 }}
+                        title="Click to edit"
+                      >
+                        {item.meta.days}d ✎
+                      </button>
+                    )}
+                    {isEditingDays && (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          value={editDays}
+                          onChange={(e) => setEditDays(e.target.value)}
+                          onBlur={() => saveDaysEdit(item)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveDaysEdit(item)
+                            if (e.key === 'Escape') { setEditingMetaId(null); setEditDays('') }
+                          }}
+                          autoFocus
+                          className="text-xs px-1.5 py-0.5 rounded outline-none"
+                          style={{ border: '1px solid var(--accent)', width: '70px' }}
+                        />
+                        <span className="text-xs" style={{ color: 'var(--muted)' }}>days</span>
+                      </div>
                     )}
                     {!item.isDefault && (
                       <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#78350f' }}>
@@ -101,20 +156,21 @@ function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete
 
               {/* Actions */}
               <div className="flex items-center gap-1 shrink-0">
-                {!isEditing && (
+                {!isEditingLabel && !isEditingDays && (
                   <button
-                    onClick={() => startEdit(item)}
+                    onClick={() => startLabelEdit(item)}
                     className="text-xs px-2 py-1 rounded transition-all"
                     style={{ color: 'var(--muted)', background: 'transparent' }}
                   >
-                    Edit
+                    Edit name
                   </button>
                 )}
-                {!item.isDefault && !isEditing && (
+                {!item.isDefault && !isEditingLabel && !isEditingDays && (
                   <button
                     onClick={() => {
                       if (confirm(`Delete "${item.label}"? This cannot be undone.`)) {
-                        onDelete(category.key, item.id)
+                        deleteCustomItem(category.key, item.id)
+                        refresh()
                       }
                     }}
                     className="text-xs px-2 py-1 rounded transition-all"
@@ -142,6 +198,18 @@ function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete
             className="flex-1 text-sm px-3 py-1.5 rounded outline-none"
             style={{ border: '1px solid var(--border)', background: 'white' }}
           />
+          {supportsDays && (
+            <input
+              type="number"
+              min="0"
+              value={newDays}
+              onChange={(e) => setNewDays(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
+              placeholder="days"
+              className="text-sm px-2 py-1.5 rounded outline-none"
+              style={{ border: '1px solid var(--border)', background: 'white', width: '80px' }}
+            />
+          )}
           <button
             onClick={handleAdd}
             disabled={!newLabel.trim()}
@@ -161,28 +229,11 @@ function CategorySection({ category, items, onAdd, onToggle, onRelabel, onDelete
 }
 
 export default function MasterConfigPanel({ onClose }) {
-  // Use a counter trick to force re-renders after each storage change
   const [, setTick] = useState(0)
   const refresh = () => setTick(t => t + 1)
 
   const config = getMasterConfig()
 
-  const handleAdd = (categoryKey, label) => {
-    addCustomItem(categoryKey, label)
-    refresh()
-  }
-  const handleToggle = (categoryKey, id) => {
-    toggleItemEnabled(categoryKey, id)
-    refresh()
-  }
-  const handleRelabel = (categoryKey, id, label) => {
-    updateItemLabel(categoryKey, id, label)
-    refresh()
-  }
-  const handleDelete = (categoryKey, id) => {
-    deleteCustomItem(categoryKey, id)
-    refresh()
-  }
   const handleReset = () => {
     if (confirm('Reset all settings to defaults? Your custom items will be deleted. This cannot be undone.')) {
       resetToDefaults()
@@ -230,8 +281,8 @@ export default function MasterConfigPanel({ onClose }) {
         {/* Intro */}
         <div className="px-6 py-4" style={{ background: '#fffbeb', borderBottom: '1px solid var(--border)' }}>
           <p className="text-xs" style={{ color: '#78350f' }}>
-            <strong>Defaults are pre-loaded.</strong> Disable items you don't need, edit labels to match your firm's language,
-            or add new options (e.g., "BACS" for UK clients). Disabling hides items from dropdowns without losing existing data.
+            <strong>Defaults are pre-loaded.</strong> Disable items you don't need, edit labels and day counts to match your firm's workflow,
+            or add new options. Disabling hides items from dropdowns without losing existing data.
             Custom items can be deleted; default items can only be disabled.
           </p>
         </div>
@@ -243,10 +294,7 @@ export default function MasterConfigPanel({ onClose }) {
               key={cat.key}
               category={cat}
               items={config[cat.key] || []}
-              onAdd={handleAdd}
-              onToggle={handleToggle}
-              onRelabel={handleRelabel}
-              onDelete={handleDelete}
+              refresh={refresh}
             />
           ))}
         </div>

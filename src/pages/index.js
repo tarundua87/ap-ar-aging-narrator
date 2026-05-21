@@ -11,6 +11,7 @@ import VendorSettingsPanel from '../components/VendorSettingsPanel'
 import ClientGroupsPanel from '../components/ClientGroupsPanel'
 import NewVendorsModal from '../components/NewVendorsModal'
 import VendorProfileForm from '../components/VendorProfileForm'
+import AllActionItemsPage from '../components/AllActionItemsPage'
 import {
   listClients, getClient, getLatestReport, getReport,
   saveReport, saveVendorNarrative, saveClientNarrative,
@@ -29,6 +30,7 @@ const VIEW_LIBRARY = 'library'
 const VIEW_UPLOAD = 'upload'
 const VIEW_UPLOAD_SCOPED = 'upload_scoped'
 const VIEW_REPORT = 'report'
+const VIEW_ALL_ACTION_ITEMS = 'all_action_items'
 
 export default function Dashboard() {
   // Current view
@@ -178,6 +180,7 @@ export default function Dashboard() {
 
   const handleNewUpload = () => setView(VIEW_UPLOAD)
   const handleUploadNewPeriod = () => setView(VIEW_UPLOAD_SCOPED)
+  const handleOpenAllActionItems = () => setView(VIEW_ALL_ACTION_ITEMS)
 
   const handleDeleteClient = (slug) => {
     deleteClient(slug)
@@ -522,10 +525,13 @@ export default function Dashboard() {
       </Head>
 
       <div className="min-h-screen" style={{ background: 'var(--paper)' }}>
-        <Header onOpenSettings={() => setShowMasterConfig(true)} />
+      <Header
+          onOpenSettings={() => setShowMasterConfig(true)}
+          onOpenAllActionItems={handleOpenAllActionItems}
+        />
 
         <main className="max-w-7xl mx-auto px-6 py-8">
-          {view === VIEW_LIBRARY && (
+        {view === VIEW_LIBRARY && (
             <ClientLibrary
               clients={clients}
               onOpenClient={handleOpenClient}
@@ -533,6 +539,7 @@ export default function Dashboard() {
               onNewUpload={handleNewUpload}
               onDeleteClient={handleDeleteClient}
               onManageGroups={() => setShowGroupsPanel(true)}
+              onOpenAllActionItems={handleOpenAllActionItems}
             />
           )}
 
@@ -589,11 +596,13 @@ export default function Dashboard() {
                 <div className="lg:col-span-2">
                 <NarrativePanel
                     clientName={getClient(activeSlug)?.displayName || 'Client'}
+                    clientSlug={activeSlug}
                     asOfDate={activeReport.asOfDate}
                     vendor={selectedVendor}
                     aggregate={activeReport.parsedData.aggregate}
                     parsedData={activeReport.parsedData}
                     rawCsv={activeReport.rawCsv}
+                    reportId={activeReportId}
                     narrative={selectedVendor ? vendorNarrative : activeReport.clientNarrative}
                     loading={selectedVendor ? loadingVendor : loadingClient}
                     onRefresh={handleRefreshNarrative}
@@ -607,8 +616,16 @@ export default function Dashboard() {
                     regeneratingEmail={regeneratingEmail}
                   />
                 </div>
-              </div>
+                </div>
             </>
+          )}
+
+          {view === VIEW_ALL_ACTION_ITEMS && (
+            <AllActionItemsPage
+              clients={clients}
+              onBack={() => setView(VIEW_LIBRARY)}
+              onJumpToClient={(slug) => handleOpenClient(slug)}
+            />
           )}
         </main>
 

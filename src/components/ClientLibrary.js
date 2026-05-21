@@ -278,7 +278,7 @@ function ClientCard({ client, onOpen, onOpenPeriod, onDelete }) {
   )
 }
 
-export default function ClientLibrary({ clients, onOpenClient, onOpenPeriod, onNewUpload, onDeleteClient, onManageGroups }) {
+export default function ClientLibrary({ clients, onOpenClient, onOpenPeriod, onNewUpload, onDeleteClient, onManageGroups, onOpenAllActionItems }) {
   if (clients.length === 0) {
     return (
       <div className="max-w-2xl mx-auto mt-16 text-center">
@@ -320,6 +320,15 @@ export default function ClientLibrary({ clients, onOpenClient, onOpenPeriod, onN
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {onOpenAllActionItems && (
+            <button
+              onClick={onOpenAllActionItems}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-90 flex items-center gap-1.5"
+              style={{ background: 'transparent', color: 'var(--ink)', border: '1px solid var(--border)' }}
+            >
+              🔔 All Action Items
+            </button>
+          )}
           {onManageGroups && (
             <button
               onClick={onManageGroups}

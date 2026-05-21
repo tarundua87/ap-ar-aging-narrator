@@ -1,15 +1,18 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import VendorProfileStrip from './VendorProfileStrip'
+import ActionItemsPanel from './ActionItemsPanel'
 import { extractDraftEmail, hasDraftEmail, narrativeWithoutDraft } from '../lib/narrativeParser'
 import {
   buildClientAgingTable, buildVendorAgingTable, buildClientInvoiceTable,
   tableToRowsArray, copyTableAsTSV, exportTableAsPDF,
 } from '../lib/exportTable'
+import { listItemsForClient, listItemsForVendor, ACTION_STATUS } from '../lib/actionItems'
 
 const TAB_SUMMARY = 'summary'
 const TAB_EMAIL = 'email'
 const TAB_REPORT = 'report'
 const TAB_INPUT = 'input'
+const TAB_ACTIONS = 'actions'
 
 function ActionButton({ onClick, label, variant = 'subtle', disabled = false, title, onDark = false }) {
   const styles = {
@@ -699,11 +702,13 @@ function parseRawCsvIntoSections(rawCsv) {
 // ── Main NarrativePanel ────────────────────────────────────────
 export default function NarrativePanel({
   clientName,
+  clientSlug,
   asOfDate,
   vendor,
   aggregate,
   parsedData,
   rawCsv,
+  reportId,
   narrative,
   loading,
   onRefresh,
@@ -717,10 +722,28 @@ export default function NarrativePanel({
   regeneratingEmail,
 }) {
   const [activeTab, setActiveTab] = useState(TAB_SUMMARY)
+  const [actionItemsTick, setActionItemsTick] = useState(0)
   const isVendorView = !!vendor
   const mode = isVendorView ? 'vendor' : 'client'
 
   const hasEmail = narrative ? hasDraftEmail(narrative, mode) : false
+
+  // Count of active action items (for the tab badge)
+  const actionItemsCount = useMemo(() => {
+    if (!clientSlug) return 0
+    const items = isVendorView
+      ? listItemsForVendor(clientSlug, vendor.name)
+      : listItemsForClient(clientSlug)
+    return items.filter(i => i.status === ACTION_STATUS.OPEN || i.status === ACTION_STATUS.SNOOZED).length
+  }, [clientSlug, vendor, isVendorView, actionItemsTick])
+
+  // Refresh badge count when the user switches away from the actions tab
+  // (in case they completed items there)
+  useEffect(() => {
+    if (activeTab !== TAB_ACTIONS) {
+      setActionItemsTick(t => t + 1)
+    }
+  }, [activeTab])
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)', background: 'white' }}>
@@ -787,7 +810,7 @@ export default function NarrativePanel({
         />
       )}
 
-      {/* Tab pills */}
+{/* Tab pills */}
       <div className="px-6 py-3 flex items-center gap-2 flex-wrap" style={{ borderBottom: '1px solid var(--border)', background: 'white' }}>
         <PillTab label="Summary" active={activeTab === TAB_SUMMARY} onClick={() => setActiveTab(TAB_SUMMARY)} />
         <PillTab label="Draft Email" active={activeTab === TAB_EMAIL} onClick={() => setActiveTab(TAB_EMAIL)} badge={hasEmail ? '✓' : null} />
@@ -795,6 +818,12 @@ export default function NarrativePanel({
         {!isVendorView && (
           <PillTab label="Input Data" active={activeTab === TAB_INPUT} onClick={() => setActiveTab(TAB_INPUT)} />
         )}
+        <PillTab
+          label="Action Items"
+          active={activeTab === TAB_ACTIONS}
+          onClick={() => setActiveTab(TAB_ACTIONS)}
+          badge={actionItemsCount > 0 ? actionItemsCount : null}
+        />
       </div>
 
       {/* Tab content */}
@@ -831,6 +860,15 @@ export default function NarrativePanel({
             clientName={clientName}
             asOfDate={asOfDate}
             rawCsv={rawCsv}
+          />
+        )}
+        {activeTab === TAB_ACTIONS && clientSlug && (
+          <ActionItemsPanel
+            clientSlug={clientSlug}
+            clientName={clientName}
+            reportId={reportId}
+            vendors={parsedData?.vendors || []}
+            selectedVendorName={isVendorView ? vendor.name : null}
           />
         )}
       </div>

@@ -93,6 +93,12 @@ export const DEFAULT_CONFIG = {
     { id: 'banking-fees', label: 'Banking / Fees', enabled: true, isDefault: true, meta: { icon: '🏦' } },
     { id: 'other', label: 'Other', enabled: true, isDefault: true, meta: { icon: '•' } },
   ],
+  actionItemSettings: [
+    { id: 'dispute-cadence', label: 'Dispute Follow-up Cadence', enabled: true, isDefault: true, meta: { days: 14, icon: '⚠️', description: 'How many days between dispute follow-up checks' } },
+    { id: 'hold-default-days', label: 'Hold Default Window', enabled: true, isDefault: true, meta: { days: 30, icon: '⏸', description: 'Default expiry for vendors/invoices put on Hold without a specific date' } },
+    { id: 'overdue-color-threshold', label: 'Overdue Alert Color Threshold', enabled: true, isDefault: true, meta: { days: 0, icon: '🔴', description: 'Action items overdue past this many days show in red (0 = same day)' } },
+    { id: 'urgent-window-days', label: 'Urgent Window', enabled: true, isDefault: true, meta: { days: 7, icon: '🟡', description: 'Items due within this many days are shown as urgent' } },
+  ],
 }
 
 // ── Read / write storage ────────────────────────────────────
@@ -227,4 +233,5 @@ export const CONFIG_CATEGORIES = [
   { key: 'statuses', label: 'Vendor Statuses', description: 'Workflow status of a vendor' },
   { key: 'invoiceFlags', label: 'Invoice Action Flags', description: 'State of individual invoices' },
   { key: 'invoiceStatuses', label: 'Invoice Statuses', description: 'Workflow status of individual invoices' },
+  { key: 'actionItemSettings', label: 'Action Items Settings', description: 'Defaults for reminders, dispute follow-ups, and hold expiry' },
 ]

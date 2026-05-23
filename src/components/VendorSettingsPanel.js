@@ -12,6 +12,27 @@ function fmt(n) {
   return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+// Take Actions that REQUIRE a reminder date to be set.
+// Saving them with a blank reminderDate is allowed (per B-warn decision),
+// but the row shows a warning and no action item is triggered until both
+// fields are populated.
+const TAKE_ACTIONS_REQUIRING_REMINDER = ['hold', 'disputed', 'pending-recon']
+
+// Returns YYYY-MM-DD for today, used to set the min on the date input
+function todayIso() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString().slice(0, 10)
+}
+
+// Validate reminderDate is today or future (defensive — in case a past
+// date sneaks through despite the min attribute on the input)
+function isValidReminderDate(dateStr) {
+  if (!dateStr) return false
+  const today = todayIso()
+  return dateStr >= today
+}
+
 function InlineSelect({ value, onChange, options, withIcons = false }) {
   return (
     <select
@@ -33,6 +54,7 @@ function InlineSelect({ value, onChange, options, withIcons = false }) {
 function InvoiceOverridesTable({ clientSlug, reportId, vendor, overrides, onChange }) {
   const invoiceStatuses = getEnabledItems('invoiceStatuses')
   const takeActions = getEnabledItems('invoiceTakeActions')
+  const minDate = todayIso()
 
   const updateOverride = (invoiceNumber, key, value) => {
     const current = overrides[vendor.name + '||' + invoiceNumber] || emptyInvoiceOverride()
@@ -40,6 +62,10 @@ function InvoiceOverridesTable({ clientSlug, reportId, vendor, overrides, onChan
     // If user switches away from Part Pay, clear the part-payment amount
     if (key === 'takeActionId' && value !== 'part-pay') {
       next.partPaymentAmount = null
+    }
+    // Defensive: if user somehow set a past reminderDate, refuse to save it
+    if (key === 'reminderDate' && value && !isValidReminderDate(value)) {
+      return
     }
     saveInvoiceOverride(clientSlug, reportId, vendor.name, invoiceNumber, next)
     onChange()
@@ -65,6 +91,8 @@ function InvoiceOverridesTable({ clientSlug, reportId, vendor, overrides, onChan
             {vendor.invoices.map((inv, idx) => {
               const override = overrides[vendor.name + '||' + inv.invoiceNumber] || emptyInvoiceOverride()
               const isPartPay = override.takeActionId === 'part-pay'
+              const reminderRequired = TAKE_ACTIONS_REQUIRING_REMINDER.includes(override.takeActionId)
+              const reminderMissing = reminderRequired && !override.reminderDate
               return (
                 <tr key={idx} style={{ borderBottom: idx < vendor.invoices.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <td className="px-3 py-2 font-medium align-top">{inv.invoiceNumber}</td>
@@ -104,6 +132,11 @@ function InvoiceOverridesTable({ clientSlug, reportId, vendor, overrides, onChan
                         )}
                       </div>
                     )}
+                    {reminderRequired && (
+                      <p className="text-xs mt-1" style={{ color: reminderMissing ? '#c8401a' : '#15803d', fontWeight: 500 }}>
+                        {reminderMissing ? '⚠ Reminder date required →' : '✓ Reminder date set'}
+                      </p>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-center align-top" style={{ minWidth: '70px' }}>
                     <input
@@ -121,14 +154,23 @@ function InvoiceOverridesTable({ clientSlug, reportId, vendor, overrides, onChan
                       options={invoiceStatuses}
                     />
                   </td>
-                  <td className="px-3 py-2 align-top" style={{ minWidth: '140px' }}>
+                  <td className="px-3 py-2 align-top" style={{ minWidth: '160px' }}>
                     <input
                       type="date"
+                      min={minDate}
                       value={override.reminderDate || ''}
                       onChange={(e) => updateOverride(inv.invoiceNumber, 'reminderDate', e.target.value)}
                       className="text-xs px-2 py-1 rounded outline-none w-full"
-                      style={{ border: '1px solid var(--border)', background: 'white' }}
+                      style={{
+                        border: '1px solid ' + (reminderMissing ? '#c8401a' : 'var(--border)'),
+                        background: reminderMissing ? '#fef2f2' : 'white',
+                      }}
                     />
+                    {reminderMissing && (
+                      <p className="text-xs mt-1" style={{ color: '#c8401a' }}>
+                        Pick today or a future date
+                      </p>
+                    )}
                   </td>
                   <td className="px-3 py-2 align-top" style={{ minWidth: '160px' }}>
                     <input

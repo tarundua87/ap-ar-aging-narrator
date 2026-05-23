@@ -2,72 +2,36 @@
 // Called by vendorProfiles.js after a profile or invoice override is saved.
 // Decides what new items to create (or not duplicate).
 //
-// Triggers handled:
-//   - Reminder date set → reminder item
-//   - Action flag = 'hold' → hold-expiry item (default +30 days if no date specified)
-//   - Action flag = 'disputed' → dispute-followup item (default +14 days)
-//   - Invoice flag = 'on-hold' → hold-expiry item (child of vendor's, if any)
-//   - Invoice flag = 'disputed' → dispute-followup item (child of vendor's, if any)
+// Phase 2A design decisions:
+//   - reminderDate is the user's chosen follow-up date — REQUIRED for an
+//     action item to be created. We do not use system defaults anymore.
+//   - Vendor-level Action Flag triggers are REMOVED entirely (per locked scope).
+//     Existing items from old flag triggers are left in place — bookkeeper
+//     can mark them complete or cancelled manually.
+//   - Invoice-level Take Action drives the TYPE of follow-up item:
+//       hold          → HOLD_EXPIRY
+//       disputed      → DISPUTE_FOLLOWUP (no longer recurring)
+//       pending-recon → RECONCILIATION_FOLLOWUP
+//       (anything else with a reminderDate) → generic REMINDER
+//   - Auto Pay is NOT in the Take Action enum — it lives on the vendor
+//     profile as paymentMethodId. Auto-pay invoices generate no items here.
 
 import {
   createActionItem, findExistingAutoItem, ACTION_TYPES,
 } from './actionItems'
 
-// Default cadence values (kept here in case Master Config isn't loaded yet).
-// The Master Config can override these — checked at trigger time.
-const DEFAULT_DISPUTE_CADENCE_DAYS = 14
-const DEFAULT_HOLD_DEFAULT_DAYS = 30
-
-function addDays(daysFromToday) {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() + daysFromToday)
-  return d.toISOString().slice(0, 10)
-}
-
-// Read user's preferred default cadences from Master Config if available.
-// Master Config items live under category 'actionItemSettings' — we add
-// that category in File C3. Until then, fall back to constants here.
-function readDefaults() {
-  if (typeof window === 'undefined') {
-    return {
-      disputeCadenceDays: DEFAULT_DISPUTE_CADENCE_DAYS,
-      holdDefaultDays: DEFAULT_HOLD_DEFAULT_DAYS,
-    }
-  }
-  try {
-    const raw = window.localStorage.getItem('ap-narrator:masterConfig')
-    if (!raw) return {
-      disputeCadenceDays: DEFAULT_DISPUTE_CADENCE_DAYS,
-      holdDefaultDays: DEFAULT_HOLD_DEFAULT_DAYS,
-    }
-    const cfg = JSON.parse(raw) || {}
-    const settings = cfg.actionItemSettings || []
-    const disputeItem = settings.find(s => s.id === 'dispute-cadence')
-    const holdItem = settings.find(s => s.id === 'hold-default-days')
-    return {
-      disputeCadenceDays: disputeItem?.meta?.days ?? DEFAULT_DISPUTE_CADENCE_DAYS,
-      holdDefaultDays: holdItem?.meta?.days ?? DEFAULT_HOLD_DEFAULT_DAYS,
-    }
-  } catch {
-    return {
-      disputeCadenceDays: DEFAULT_DISPUTE_CADENCE_DAYS,
-      holdDefaultDays: DEFAULT_HOLD_DEFAULT_DAYS,
-    }
-  }
-}
-
-// ── Triggers for VENDOR-LEVEL profile changes ───────────
+// ── Vendor-level triggers ────────────────────────────────
 
 // Called after a vendor profile is saved.
 // Returns an array of created action items (or empty).
+//
+// Only one vendor-level trigger remains: a vendor-level reminderDate creates
+// a generic REMINDER item. Action Flag triggers are removed per Phase 2A.
 export function triggerOnVendorProfileSave({ clientSlug, vendorName, profile, profileDescribed }) {
   const created = []
   if (!clientSlug || !vendorName || !profile) return created
 
-  const defaults = readDefaults()
-
-  // Reminder date trigger
+  // Reminder date trigger — generic reminder, no Take Action context at vendor level
   if (profile.reminderDate) {
     const existing = findExistingAutoItem({
       clientSlug, type: ACTION_TYPES.REMINDER, vendorName,
@@ -83,128 +47,91 @@ export function triggerOnVendorProfileSave({ clientSlug, vendorName, profile, pr
         createdBy: 'system',
       })
       if (item) created.push(item)
-    } else {
-      // Existing item — leave as-is (user manages manually per our decision)
     }
-  }
-
-  // Action flag triggers — use describeProfile labels if available
-  const actionFlagLabel = profileDescribed?.actionFlag || ''
-
-  if (/^hold$/i.test(actionFlagLabel)) {
-    const existing = findExistingAutoItem({
-      clientSlug, type: ACTION_TYPES.HOLD_EXPIRY, vendorName,
-    })
-    if (!existing) {
-      const item = createActionItem({
-        clientSlug,
-        type: ACTION_TYPES.HOLD_EXPIRY,
-        title: `${vendorName} hold expires`,
-        vendorName,
-        dueDate: addDays(defaults.holdDefaultDays),
-        notes: `Hold flag set on vendor profile. Default ${defaults.holdDefaultDays}-day review window.`,
-        createdBy: 'system',
-      })
-      if (item) created.push(item)
-    }
-  }
-
-  if (/disputed/i.test(actionFlagLabel)) {
-    const existing = findExistingAutoItem({
-      clientSlug, type: ACTION_TYPES.DISPUTE_FOLLOWUP, vendorName,
-    })
-    if (!existing) {
-      const item = createActionItem({
-        clientSlug,
-        type: ACTION_TYPES.DISPUTE_FOLLOWUP,
-        title: `Follow up on ${vendorName} dispute`,
-        vendorName,
-        dueDate: addDays(defaults.disputeCadenceDays),
-        recurringCadenceDays: defaults.disputeCadenceDays,
-        notes: `Dispute flag set on vendor profile. Follow up every ${defaults.disputeCadenceDays} days.`,
-        createdBy: 'system',
-      })
-      if (item) created.push(item)
-    }
+    // Existing item — leave as-is; user manages manually
   }
 
   return created
 }
 
-// ── Triggers for INVOICE-LEVEL override changes ─────────
+// ── Invoice-level triggers ──────────────────────────────
 
 // Called after an invoice override is saved.
 // Returns an array of created action items (or empty).
-// Invoice-level items can be CHILD items of a vendor-level item (parent/child model).
+//
+// Rule: reminderDate is required. Without it, no item is created — regardless
+// of takeActionId. The Take Action only colours the TYPE of follow-up.
+//
+// Invoice-level items can be CHILD items of a vendor-level item of the same
+// type, so the bookkeeper sees them grouped under the parent vendor item.
 export function triggerOnInvoiceOverrideSave({
   clientSlug, reportId, vendorName, invoiceNumber, override, overrideDescribed,
 }) {
   const created = []
   if (!clientSlug || !vendorName || !invoiceNumber || !override) return created
 
-  const defaults = readDefaults()
-  const flagLabel = overrideDescribed?.flag || ''
+  // Hard requirement: must have a reminderDate for any item to be created.
+  // This implements the "no defaults, user must pick the date" decision.
+  if (!override.reminderDate) return created
+
+  // Map takeActionId to action item type
+  const takeActionId = override.takeActionId || 'none'
+  let type = null
+  let titlePrefix = null
+
+  if (takeActionId === 'hold') {
+    type = ACTION_TYPES.HOLD_EXPIRY
+    titlePrefix = `Invoice ${invoiceNumber} hold review`
+  } else if (takeActionId === 'disputed') {
+    type = ACTION_TYPES.DISPUTE_FOLLOWUP
+    titlePrefix = `Follow up on disputed invoice ${invoiceNumber}`
+  } else if (takeActionId === 'pending-recon') {
+    type = ACTION_TYPES.RECONCILIATION_FOLLOWUP
+    titlePrefix = `Reconciliation check on invoice ${invoiceNumber}`
+  } else {
+    // Generic reminder for none / full-pay / part-pay with a reminderDate set
+    type = ACTION_TYPES.REMINDER
+    titlePrefix = `Reminder on invoice ${invoiceNumber}`
+  }
 
   // Find any existing vendor-level item of the same type to use as parent
-  const findVendorParent = (type) => {
+  const findVendorParent = (parentType) => {
     return findExistingAutoItem({
-      clientSlug, type, vendorName, invoiceNumber: null,
+      clientSlug, type: parentType, vendorName, invoiceNumber: null,
     })
   }
 
-  if (/^on hold$/i.test(flagLabel)) {
-    const existing = findExistingAutoItem({
-      clientSlug, type: ACTION_TYPES.HOLD_EXPIRY, vendorName, invoiceNumber,
-    })
-    if (!existing) {
-      const parent = findVendorParent(ACTION_TYPES.HOLD_EXPIRY)
-      const item = createActionItem({
-        clientSlug,
-        reportId,
-        type: ACTION_TYPES.HOLD_EXPIRY,
-        title: `Invoice ${invoiceNumber} hold expires`,
-        vendorName,
-        invoiceNumber,
-        parentItemId: parent?.id || null,
-        dueDate: addDays(defaults.holdDefaultDays),
-        notes: `Hold flag set on invoice. Default ${defaults.holdDefaultDays}-day review.`,
-        createdBy: 'system',
-      })
-      if (item) created.push(item)
-    }
-  }
+  // De-duplicate: don't create if an open item of this type already exists
+  // for this specific invoice
+  const existing = findExistingAutoItem({
+    clientSlug, type, vendorName, invoiceNumber,
+  })
+  if (existing) return created
 
-  if (/^disputed$/i.test(flagLabel)) {
-    const existing = findExistingAutoItem({
-      clientSlug, type: ACTION_TYPES.DISPUTE_FOLLOWUP, vendorName, invoiceNumber,
-    })
-    if (!existing) {
-      const parent = findVendorParent(ACTION_TYPES.DISPUTE_FOLLOWUP)
-      const item = createActionItem({
-        clientSlug,
-        reportId,
-        type: ACTION_TYPES.DISPUTE_FOLLOWUP,
-        title: `Follow up on disputed invoice ${invoiceNumber}`,
-        vendorName,
-        invoiceNumber,
-        parentItemId: parent?.id || null,
-        dueDate: addDays(defaults.disputeCadenceDays),
-        recurringCadenceDays: defaults.disputeCadenceDays,
-        notes: `Dispute flag set on this specific invoice.`,
-        createdBy: 'system',
-      })
-      if (item) created.push(item)
-    }
-  }
+  const parent = findVendorParent(type)
+  const notes = override.notes
+    ? override.notes
+    : `Auto-created from invoice Take Action: ${overrideDescribed?.takeAction || takeActionId}`
 
-  // Cancelled / Credit received → not actionable, no item generated
-  // Paid manually → not actionable, no item generated
-  // Awaiting documentation → could be a reminder, but we skip for now to avoid noise
+  const item = createActionItem({
+    clientSlug,
+    reportId,
+    type,
+    title: titlePrefix,
+    vendorName,
+    invoiceNumber,
+    parentItemId: parent?.id || null,
+    dueDate: override.reminderDate,
+    notes,
+    createdBy: 'system',
+  })
+  if (item) created.push(item)
 
   return created
 }
 
-// Helper: summarize what was triggered (for showing a toast/notification)
+// ── Helper: summarize trigger results ───────────────────
+
 export function summarizeTriggerResults(items) {
   if (!items || items.length === 0) return null
   if (items.length === 1) {

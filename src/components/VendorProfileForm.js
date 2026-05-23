@@ -2,6 +2,19 @@ import { useState, useEffect } from 'react'
 import { emptyProfile } from '../lib/vendorProfiles'
 import { getEnabledItems } from '../lib/masterConfig'
 
+// Returns YYYY-MM-DD for today, used to set the min on the date input
+function todayIso() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString().slice(0, 10)
+}
+
+// Validate reminderDate is today or future (defensive — past dates blocked)
+function isValidReminderDate(dateStr) {
+  if (!dateStr) return true // empty is allowed at vendor level
+  return dateStr >= todayIso()
+}
+
 function Field({ label, hint, children }) {
   return (
     <div className="mb-4">
@@ -42,6 +55,7 @@ export default function VendorProfileForm({
 }) {
   const [profile, setProfile] = useState(initialProfile || emptyProfile())
   const [showSuggestion, setShowSuggestion] = useState(!!suggestion)
+  const minDate = todayIso()
 
   useEffect(() => {
     setProfile(initialProfile || emptyProfile())
@@ -56,6 +70,12 @@ export default function VendorProfileForm({
 
   const update = (key, value) => setProfile(p => ({ ...p, [key]: value }))
 
+  // Defensive: reject past reminderDate values at the field level
+  const updateReminderDate = (value) => {
+    if (value && !isValidReminderDate(value)) return
+    update('reminderDate', value)
+  }
+
   const handleAcceptSuggestion = () => {
     if (suggestion?.profile) {
       setProfile(suggestion.profile)
@@ -65,6 +85,7 @@ export default function VendorProfileForm({
   }
 
   const isCustomTerms = profile.paymentTermsId === 'custom'
+  const reminderInvalid = profile.reminderDate && !isValidReminderDate(profile.reminderDate)
 
   const formBody = (
     <div>
@@ -177,13 +198,20 @@ export default function VendorProfileForm({
           </label>
         </Field>
 
-        <Field label="Reminder Date" hint="When to follow up next">
+        <Field
+          label="Reminder Date"
+          hint={reminderInvalid ? 'Pick today or a future date' : 'When to follow up next'}
+        >
           <input
             type="date"
+            min={minDate}
             value={profile.reminderDate || ''}
-            onChange={(e) => update('reminderDate', e.target.value)}
+            onChange={(e) => updateReminderDate(e.target.value)}
             className="w-full text-sm px-3 py-2 rounded outline-none"
-            style={{ border: '1px solid var(--border)' }}
+            style={{
+              border: '1px solid ' + (reminderInvalid ? '#c8401a' : 'var(--border)'),
+              background: reminderInvalid ? '#fef2f2' : 'white',
+            }}
           />
         </Field>
       </div>
@@ -212,8 +240,14 @@ export default function VendorProfileForm({
         )}
         <button
           onClick={() => onSave(profile)}
+          disabled={reminderInvalid}
           className="text-sm px-5 py-2 rounded font-medium transition-all"
-          style={{ background: 'var(--accent)', color: 'white' }}
+          style={{
+            background: reminderInvalid ? '#9ca3af' : 'var(--accent)',
+            color: 'white',
+            cursor: reminderInvalid ? 'not-allowed' : 'pointer',
+            opacity: reminderInvalid ? 0.6 : 1,
+          }}
         >
           Save Profile
         </button>

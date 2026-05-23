@@ -36,6 +36,7 @@ export const ACTION_TYPES = {
   REMINDER: 'reminder',
   HOLD_EXPIRY: 'hold-expiry',
   DISPUTE_FOLLOWUP: 'dispute-followup',
+  RECONCILIATION_FOLLOWUP: 'reconciliation-followup',
   MANUAL: 'manual',
 }
 
@@ -50,6 +51,7 @@ export const TYPE_METADATA = {
   reminder: { label: 'Reminder', icon: '⏰', color: '#b87d00' },
   'hold-expiry': { label: 'Hold Expiry', icon: '⏸', color: '#0369a1' },
   'dispute-followup': { label: 'Dispute Follow-up', icon: '⚠️', color: '#c8401a' },
+  'reconciliation-followup': { label: 'Reconciliation Follow-up', icon: '🔍', color: '#7c3aed' },
   manual: { label: 'Manual', icon: '📌', color: '#374151' },
 }
 

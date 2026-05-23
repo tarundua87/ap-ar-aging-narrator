@@ -14,6 +14,7 @@ const FILTER_ALL = 'all'
 const FILTER_REMINDER = 'reminder'
 const FILTER_HOLD = 'hold-expiry'
 const FILTER_DISPUTE = 'dispute-followup'
+const FILTER_RECON = 'reconciliation-followup'
 const FILTER_MANUAL = 'manual'
 
 const FILTERS = [
@@ -21,6 +22,7 @@ const FILTERS = [
   { key: FILTER_REMINDER, label: 'Reminders', icon: '⏰' },
   { key: FILTER_HOLD, label: 'Holds', icon: '⏸' },
   { key: FILTER_DISPUTE, label: 'Disputes', icon: '⚠️' },
+  { key: FILTER_RECON, label: 'Reconciliation', icon: '🔍' },
   { key: FILTER_MANUAL, label: 'Manual', icon: '📌' },
 ]
 

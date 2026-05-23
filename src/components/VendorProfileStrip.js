@@ -14,7 +14,7 @@ function Chip({ icon, label, value, valueColor, bg, border }) {
       }}
     >
       {icon && <span style={{ fontSize: '0.85rem' }}>{icon}</span>}
-      <span style={{ color: 'var(--muted)', fontWeight: 500 }}>{label}:</span>
+      {label && <span style={{ color: 'var(--muted)', fontWeight: 500 }}>{label}:</span>}
       <span style={{ color: valueColor || 'var(--ink)', fontWeight: 600 }}>{value}</span>
     </div>
   )
@@ -52,11 +52,24 @@ export default function VendorProfileStrip({ vendorName, profile, onEdit }) {
   const criticality = getItemById('criticalityLevels', profile.criticalityId)
   const nature = getItemById('vendorNatures', profile.natureId)
   const paymentTerms = getItemById('paymentTerms', profile.paymentTermsId)
-  const actionFlag = getItemById('actionFlags', profile.actionFlagId)
-  const status = getItemById('statuses', profile.statusId)
+  const defaultTakeAction = getItemById('invoiceTakeActions', profile.defaultTakeActionId)
 
   // Decide which chips to show — only show non-default values
   const chips = []
+
+  // Flagged chip first — most attention-grabbing, mirrors the 🚩 placement
+  // in the triage list (where it appears right next to the vendor name).
+  if (profile.isFlagged) {
+    chips.push({
+      key: 'flagged',
+      icon: '🚩',
+      label: null,
+      value: 'Flagged',
+      bg: '#fef2f2',
+      border: '#fecaca',
+      valueColor: '#991b1b',
+    })
+  }
 
   if (nature && profile.natureId !== 'other') {
     chips.push({ key: 'nature', icon: nature.meta?.icon, label: 'Nature', value: nature.label })
@@ -90,17 +103,15 @@ export default function VendorProfileStrip({ vendorName, profile, onEdit }) {
     chips.push({ key: 'terms', icon: '📅', label: 'Terms', value: termsValue })
   }
 
-  if (actionFlag && profile.actionFlagId !== 'none') {
+  if (defaultTakeAction && profile.defaultTakeActionId && profile.defaultTakeActionId !== 'none') {
     chips.push({
-      key: 'flag', icon: actionFlag.meta?.icon || '🏷', label: 'Flag', value: actionFlag.label,
-      bg: '#fffbeb', border: '#fcd34d', valueColor: '#78350f',
-    })
-  }
-
-  if (status && profile.statusId !== 'pending') {
-    chips.push({
-      key: 'status', icon: '📍', label: 'Status', value: status.label,
-      valueColor: status.meta?.color,
+      key: 'take-action',
+      icon: defaultTakeAction.meta?.icon || '🎯',
+      label: 'Default Action',
+      value: defaultTakeAction.label,
+      bg: '#fffbeb',
+      border: '#fcd34d',
+      valueColor: '#78350f',
     })
   }
 

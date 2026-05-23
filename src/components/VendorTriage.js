@@ -7,27 +7,28 @@ const STATUS_CONFIG = {
   ok:       { label: 'On Track', bg: '#1a7a4a15', border: '#1a7a4a40', dot: '#1a7a4a' },
 }
 
-// Compact icons summarizing the vendor's profile.
-// Shows: action-flag icon, criticality dot, payment-method short code, configured tick.
+// Compact icons summarizing the vendor's profile state.
+// Shows: take-action icon, criticality dot, payment-method short code.
+// (Flagged status appears next to the vendor name instead — see main render.)
 function ProfileIndicators({ profile, isSelected }) {
   if (!profile) return null
 
-  const actionFlag = getItemById('actionFlags', profile.actionFlagId)
   const criticality = getItemById('criticalityLevels', profile.criticalityId)
   const paymentMethod = getItemById('paymentMethods', profile.paymentMethodId)
+  const takeAction = getItemById('invoiceTakeActions', profile.defaultTakeActionId)
 
   const indicators = []
 
-  // Action flag (only if not "none")
-  if (actionFlag && actionFlag.id !== 'none' && actionFlag.meta?.icon) {
+  // Default Take Action icon (only if not "none")
+  if (takeAction && takeAction.id !== 'none' && takeAction.meta?.icon) {
     indicators.push({
-      key: 'flag',
-      content: actionFlag.meta.icon,
-      title: actionFlag.label,
+      key: 'take',
+      content: takeAction.meta.icon,
+      title: 'Default Take Action: ' + takeAction.label,
     })
   }
 
-  // Criticality dot (only if Critical)
+  // Criticality dot (only if Critical or Flexible — Standard is the default)
   if (criticality && criticality.id === 'critical') {
     indicators.push({
       key: 'crit',
@@ -89,8 +90,8 @@ export default function VendorTriage({
   selectedVendor,
   onSelectVendor,
   onBackToClient,
-  onConfigureVendor,    // NEW: opens quick-edit for one vendor (passed from parent)
-  vendorProfiles,       // NEW: map { [vendorName]: profile }
+  onConfigureVendor,    // opens quick-edit for one vendor (passed from parent)
+  vendorProfiles,       // map { [vendorName]: profile }
 }) {
   const critical = vendors.filter(v => v.status === 'critical')
   const warning  = vendors.filter(v => v.status === 'warning')
@@ -156,6 +157,15 @@ export default function VendorTriage({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <p className="text-sm font-medium truncate">{vendor.name}</p>
+                      {profile?.isFlagged && (
+                        <span
+                          title="Flagged for attention — see Notes"
+                          className="shrink-0"
+                          style={{ fontSize: '0.85rem', lineHeight: 1 }}
+                        >
+                          🚩
+                        </span>
+                      )}
                       {profile?.is1099Eligible && (
                         <span
                           title="1099 Eligible"

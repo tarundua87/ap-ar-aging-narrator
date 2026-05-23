@@ -23,22 +23,25 @@ export function emptyProfile() {
   return {
     paymentMethodId: 'manual',
     criticalityId: 'standard',
-    natureId: 'other',           // NEW — vendor category (rent, utilities, etc.)
-    is1099Eligible: false,        // NEW — US 1099 reporting eligibility
+    natureId: 'other',
+    is1099Eligible: false,
+    isFlagged: false,             // NEW — replaces Action Flag dropdown (details go in Notes)
+    defaultTakeActionId: 'none',  // NEW — auto-applies to new invoices on next upload
     paymentTermsId: 'default',
-    customTermsDays: null,        // when paymentTermsId === 'custom'
+    customTermsDays: null,
     notes: '',
-    reminderDate: '',             // ISO date YYYY-MM-DD
-    actionFlagId: 'none',
-    statusId: 'pending',
+    reminderDate: '',
     updatedAt: null,
   }
 }
 
 export function emptyInvoiceOverride() {
   return {
-    flagId: 'none',
+    isFlagged: false,             // NEW — replaces flagId dropdown (details go in Notes)
     statusId: 'open',
+    takeActionId: 'none',         // NEW — Full Pay, Part Pay, Hold, Disputed, Pending Reconciliation, Auto Pay
+    partPaymentAmount: null,      // NEW — only meaningful when takeActionId === 'part-pay'
+    reminderDate: '',             // NEW — invoice-level reminder
     notes: '',
     updatedAt: null,
   }
@@ -293,12 +296,11 @@ export function describeProfile(profile) {
     criticality: getItemById('criticalityLevels', profile.criticalityId)?.label || 'Unknown',
     nature: getItemById('vendorNatures', profile.natureId)?.label || 'Other',
     paymentTerms: getItemById('paymentTerms', profile.paymentTermsId)?.label || 'Default',
-    actionFlag: getItemById('actionFlags', profile.actionFlagId)?.label || 'None',
-    status: getItemById('statuses', profile.statusId)?.label || 'Pending',
   }
   return {
     ...lookups,
     is1099Eligible: !!profile.is1099Eligible,
+    isFlagged: !!profile.isFlagged,
     customTermsDays: profile.customTermsDays || null,
     notes: profile.notes || '',
     reminderDate: profile.reminderDate || '',
@@ -308,8 +310,12 @@ export function describeProfile(profile) {
 export function describeInvoiceOverride(override) {
   if (!override) return null
   return {
-    flag: getItemById('invoiceFlags', override.flagId)?.label || 'None',
+    isFlagged: !!override.isFlagged,
     status: getItemById('invoiceStatuses', override.statusId)?.label || 'Open',
+    takeAction: getItemById('invoiceTakeActions', override.takeActionId)?.label || 'None',
+    takeActionId: override.takeActionId || 'none',
+    partPaymentAmount: override.partPaymentAmount || null,
+    reminderDate: override.reminderDate || '',
     notes: override.notes || '',
   }
 }
@@ -324,11 +330,11 @@ export function profileIsConfigured(profile) {
     profile.criticalityId !== empty.criticalityId ||
     profile.natureId !== empty.natureId ||
     !!profile.is1099Eligible !== empty.is1099Eligible ||
+    !!profile.isFlagged !== empty.isFlagged ||
     profile.paymentTermsId !== empty.paymentTermsId ||
+    profile.defaultTakeActionId !== empty.defaultTakeActionId ||
     (profile.notes && profile.notes.trim()) ||
-    profile.reminderDate ||
-    profile.actionFlagId !== empty.actionFlagId ||
-    profile.statusId !== empty.statusId
+    profile.reminderDate
   )
 }
 
@@ -336,8 +342,64 @@ export function invoiceOverrideIsConfigured(override) {
   if (!override) return false
   const empty = emptyInvoiceOverride()
   return (
-    override.flagId !== empty.flagId ||
+    !!override.isFlagged !== empty.isFlagged ||
     override.statusId !== empty.statusId ||
+    override.takeActionId !== empty.takeActionId ||
+    (override.partPaymentAmount && override.partPaymentAmount > 0) ||
+    override.reminderDate ||
     (override.notes && override.notes.trim())
   )
+}
+
+// ── Migration helpers ───────────────────────────────────
+// These run silently when reading existing data to keep the schema clean
+// across version changes. Old fields are stripped; new fields default sensibly.
+
+function migrateVendorProfile(profile) {
+  if (!profile) return profile
+  const migrated = { ...profile }
+  // Strip removed fields
+  delete migrated.actionFlagId
+  delete migrated.statusId
+  // Ensure new fields exist
+  if (typeof migrated.isFlagged !== 'boolean') migrated.isFlagged = false
+  if (!migrated.defaultTakeActionId) migrated.defaultTakeActionId = 'none'
+  return migrated
+}
+
+function migrateInvoiceOverride(override) {
+  if (!override) return override
+  const migrated = { ...override }
+  // Convert old flagId dropdown to isFlagged checkbox
+  if ('flagId' in migrated) {
+    migrated.isFlagged = migrated.flagId && migrated.flagId !== 'none'
+    delete migrated.flagId
+  }
+  // Ensure new fields exist
+  if (typeof migrated.isFlagged !== 'boolean') migrated.isFlagged = false
+  if (!migrated.takeActionId) migrated.takeActionId = 'none'
+  if (migrated.partPaymentAmount === undefined) migrated.partPaymentAmount = null
+  if (typeof migrated.reminderDate !== 'string') migrated.reminderDate = ''
+  return migrated
+}
+
+// Apply migration on read by wrapping the existing read functions
+const _origGetClientProfiles = getClientProfiles
+export function getMigratedClientProfiles(clientSlug) {
+  const raw = _origGetClientProfiles(clientSlug)
+  const migrated = {}
+  for (const [name, profile] of Object.entries(raw)) {
+    migrated[name] = migrateVendorProfile(profile)
+  }
+  return migrated
+}
+
+const _origGetInvoiceOverrides = getInvoiceOverrides
+export function getMigratedInvoiceOverrides(clientSlug, reportId) {
+  const raw = _origGetInvoiceOverrides(clientSlug, reportId)
+  const migrated = {}
+  for (const [key, override] of Object.entries(raw)) {
+    migrated[key] = migrateInvoiceOverride(override)
+  }
+  return migrated
 }

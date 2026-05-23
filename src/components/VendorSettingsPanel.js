@@ -31,71 +31,121 @@ function InlineSelect({ value, onChange, options, withIcons = false }) {
 
 // ── Invoice overrides editor for a single vendor ──────────
 function InvoiceOverridesTable({ clientSlug, reportId, vendor, overrides, onChange }) {
-  const invoiceFlags = getEnabledItems('invoiceFlags')
   const invoiceStatuses = getEnabledItems('invoiceStatuses')
+  const takeActions = getEnabledItems('invoiceTakeActions')
 
   const updateOverride = (invoiceNumber, key, value) => {
     const current = overrides[vendor.name + '||' + invoiceNumber] || emptyInvoiceOverride()
     const next = { ...current, [key]: value }
+    // If user switches away from Part Pay, clear the part-payment amount
+    if (key === 'takeActionId' && value !== 'part-pay') {
+      next.partPaymentAmount = null
+    }
     saveInvoiceOverride(clientSlug, reportId, vendor.name, invoiceNumber, next)
     onChange()
   }
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-      <table className="w-full text-xs">
-        <thead style={{ background: '#faf9f7' }}>
-          <tr style={{ borderBottom: '1px solid var(--border)' }}>
-            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Invoice #</th>
-            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Days Past Due</th>
-            <th className="text-right px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Open Balance</th>
-            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Flag</th>
-            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Status</th>
-            <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Notes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {vendor.invoices.map((inv, idx) => {
-            const override = overrides[vendor.name + '||' + inv.invoiceNumber] || emptyInvoiceOverride()
-            return (
-              <tr key={idx} style={{ borderBottom: idx < vendor.invoices.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                <td className="px-3 py-2 font-medium">{inv.invoiceNumber}</td>
-                <td className="px-3 py-2" style={{ color: inv.daysPastDue > 90 ? '#c8401a' : inv.daysPastDue > 60 ? '#ea580c' : inv.daysPastDue > 0 ? '#b87d00' : 'var(--muted)' }}>
-                  {inv.daysPastDue > 0 ? `${inv.daysPastDue}d` : '—'}
-                </td>
-                <td className="px-3 py-2 text-right font-semibold" style={{ color: inv.openBalance < 0 ? '#15803d' : 'var(--ink)' }}>
-                  {fmt(inv.openBalance)}
-                </td>
-                <td className="px-3 py-2" style={{ minWidth: '140px' }}>
-                  <InlineSelect
-                    value={override.flagId}
-                    onChange={(v) => updateOverride(inv.invoiceNumber, 'flagId', v)}
-                    options={invoiceFlags}
-                    withIcons
-                  />
-                </td>
-                <td className="px-3 py-2" style={{ minWidth: '140px' }}>
-                  <InlineSelect
-                    value={override.statusId}
-                    onChange={(v) => updateOverride(inv.invoiceNumber, 'statusId', v)}
-                    options={invoiceStatuses}
-                  />
-                </td>
-                <td className="px-3 py-2" style={{ minWidth: '160px' }}>
-                  <input
-                    type="text"
-                    value={override.notes || ''}
-                    onChange={(e) => updateOverride(inv.invoiceNumber, 'notes', e.target.value)}
-                    className="text-xs px-2 py-1 rounded outline-none w-full"
-                    style={{ border: '1px solid var(--border)', background: 'white' }}
-                    placeholder="Optional note…"
-                  />
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="w-full text-xs" style={{ minWidth: '1200px' }}>
+          <thead style={{ background: '#faf9f7' }}>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Invoice #</th>
+              <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Days Past Due</th>
+              <th className="text-right px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Open Balance</th>
+              <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)', minWidth: '200px' }}>Take Action</th>
+              <th className="text-center px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Flagged</th>
+              <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Status</th>
+              <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Reminder Date</th>
+              <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {vendor.invoices.map((inv, idx) => {
+              const override = overrides[vendor.name + '||' + inv.invoiceNumber] || emptyInvoiceOverride()
+              const isPartPay = override.takeActionId === 'part-pay'
+              return (
+                <tr key={idx} style={{ borderBottom: idx < vendor.invoices.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <td className="px-3 py-2 font-medium align-top">{inv.invoiceNumber}</td>
+                  <td className="px-3 py-2 align-top" style={{ color: inv.daysPastDue > 90 ? '#c8401a' : inv.daysPastDue > 60 ? '#ea580c' : inv.daysPastDue > 0 ? '#b87d00' : 'var(--muted)' }}>
+                    {inv.daysPastDue > 0 ? `${inv.daysPastDue}d` : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold align-top" style={{ color: inv.openBalance < 0 ? '#15803d' : 'var(--ink)' }}>
+                    {fmt(inv.openBalance)}
+                  </td>
+                  <td className="px-3 py-2 align-top" style={{ minWidth: '200px' }}>
+                    <InlineSelect
+                      value={override.takeActionId || 'none'}
+                      onChange={(v) => updateOverride(inv.invoiceNumber, 'takeActionId', v)}
+                      options={takeActions}
+                      withIcons
+                    />
+                    {isPartPay && (
+                      <div className="mt-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={override.partPaymentAmount ?? ''}
+                          onChange={(e) => updateOverride(
+                            inv.invoiceNumber,
+                            'partPaymentAmount',
+                            e.target.value === '' ? null : parseFloat(e.target.value)
+                          )}
+                          placeholder={`Amount to pay (max ${fmt(inv.openBalance)})`}
+                          className="text-xs px-2 py-1 rounded outline-none w-full"
+                          style={{ border: '1px solid var(--border)', background: 'white' }}
+                        />
+                        {override.partPaymentAmount > inv.openBalance && (
+                          <p className="text-xs mt-1" style={{ color: '#c8401a' }}>
+                            ⚠ Exceeds open balance
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-center align-top" style={{ minWidth: '70px' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!override.isFlagged}
+                      onChange={(e) => updateOverride(inv.invoiceNumber, 'isFlagged', e.target.checked)}
+                      title="Mark for attention — explain in Notes"
+                      style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+                    />
+                  </td>
+                  <td className="px-3 py-2 align-top" style={{ minWidth: '140px' }}>
+                    <InlineSelect
+                      value={override.statusId}
+                      onChange={(v) => updateOverride(inv.invoiceNumber, 'statusId', v)}
+                      options={invoiceStatuses}
+                    />
+                  </td>
+                  <td className="px-3 py-2 align-top" style={{ minWidth: '140px' }}>
+                    <input
+                      type="date"
+                      value={override.reminderDate || ''}
+                      onChange={(e) => updateOverride(inv.invoiceNumber, 'reminderDate', e.target.value)}
+                      className="text-xs px-2 py-1 rounded outline-none w-full"
+                      style={{ border: '1px solid var(--border)', background: 'white' }}
+                    />
+                  </td>
+                  <td className="px-3 py-2 align-top" style={{ minWidth: '160px' }}>
+                    <input
+                      type="text"
+                      value={override.notes || ''}
+                      onChange={(e) => updateOverride(inv.invoiceNumber, 'notes', e.target.value)}
+                      className="text-xs px-2 py-1 rounded outline-none w-full"
+                      style={{ border: '1px solid var(--border)', background: 'white' }}
+                      placeholder="Optional note…"
+                    />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -175,8 +225,7 @@ function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate,
   const paymentMethods = getEnabledItems('paymentMethods')
   const criticalityLevels = getEnabledItems('criticalityLevels')
   const vendorNatures = getEnabledItems('vendorNatures')
-  const actionFlags = getEnabledItems('actionFlags')
-  const statuses = getEnabledItems('statuses')
+  const takeActions = getEnabledItems('invoiceTakeActions')
 
   const updateField = (vendorName, key, value) => {
     const current = profiles[vendorName] || emptyProfile()
@@ -188,17 +237,17 @@ function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate,
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
       <div style={{ overflowX: 'auto' }}>
-      <table className="w-full text-xs" style={{ minWidth: '1100px' }}>
+        <table className="w-full text-xs" style={{ minWidth: '1180px' }}>
           <thead style={{ background: 'var(--ink)' }}>
             <tr>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Vendor</th>
               <th className="text-right px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Total A/P</th>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Payment</th>
+              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Default Take Action</th>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Criticality</th>
               <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Nature</th>
               <th className="text-center px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>1099</th>
-              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Action Flag</th>
-              <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Status</th>
+              <th className="text-center px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Flagged</th>
               <th className="px-3 py-2.5"></th>
             </tr>
           </thead>
@@ -220,6 +269,9 @@ function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate,
                       >
                         {vendor.name}
                       </button>
+                      {profile.isFlagged && (
+                        <span title="Flagged for attention" style={{ color: '#c8401a' }}>🚩</span>
+                      )}
                       {isConfigured && (
                         <span title="Profile configured" style={{ color: '#15803d' }}>●</span>
                       )}
@@ -239,6 +291,14 @@ function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate,
                       value={profile.paymentMethodId}
                       onChange={(v) => updateField(vendor.name, 'paymentMethodId', v)}
                       options={paymentMethods}
+                    />
+                  </td>
+                  <td className="px-3 py-2" style={{ minWidth: '170px' }}>
+                    <InlineSelect
+                      value={profile.defaultTakeActionId || 'none'}
+                      onChange={(v) => updateField(vendor.name, 'defaultTakeActionId', v)}
+                      options={takeActions}
+                      withIcons
                     />
                   </td>
                   <td className="px-3 py-2" style={{ minWidth: '140px' }}>
@@ -264,19 +324,13 @@ function BulkTable({ vendors, profiles, overridesByVendor, clientSlug, onUpdate,
                       style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }}
                     />
                   </td>
-                  <td className="px-3 py-2" style={{ minWidth: '180px' }}>
-                    <InlineSelect
-                      value={profile.actionFlagId}
-                      onChange={(v) => updateField(vendor.name, 'actionFlagId', v)}
-                      options={actionFlags}
-                      withIcons
-                    />
-                  </td>
-                  <td className="px-3 py-2" style={{ minWidth: '140px' }}>
-                    <InlineSelect
-                      value={profile.statusId}
-                      onChange={(v) => updateField(vendor.name, 'statusId', v)}
-                      options={statuses}
+                  <td className="px-3 py-2 text-center" style={{ minWidth: '70px' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!profile.isFlagged}
+                      onChange={(e) => updateField(vendor.name, 'isFlagged', e.target.checked)}
+                      title="Mark for attention — explain in Notes"
+                      style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }}
                     />
                   </td>
                   <td className="px-3 py-2 text-right">
@@ -381,7 +435,7 @@ export default function VendorSettingsPanel({ clientSlug, clientName, reportId, 
             <>
               <div className="mb-4">
                 <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                  Edit payment terms, criticality, and status for each vendor. Click a vendor name to access invoice-level overrides.
+                  Edit payment method, default take action, criticality, and flagged status for each vendor. Click a vendor name to access invoice-level take actions and overrides.
                   Changes save automatically.
                 </p>
               </div>

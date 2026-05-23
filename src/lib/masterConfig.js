@@ -9,6 +9,13 @@
 //   - enabled: whether to show in dropdowns
 //   - isDefault: true if shipped with the app (cannot be deleted, only disabled)
 //   - meta: optional extra data (e.g., color, icon, description)
+//
+// Phase 2A changes:
+//   - REMOVED: actionFlags (vendor-level) — replaced by isFlagged checkbox on vendor profile
+//   - REMOVED: statuses (vendor-level) — out of scope per locked design
+//   - REMOVED: invoiceFlags — replaced by isFlagged checkbox on invoice override
+//   - KEPT:    invoiceStatuses — different purpose from Flag
+//   - ADDED:   invoiceTakeActions — 6-option enum for cash-flow decisions
 
 const STORAGE_KEY = 'ap-narrator:masterConfig'
 
@@ -49,34 +56,23 @@ export const DEFAULT_CONFIG = {
     { id: 'due-on-receipt', label: 'Due on Receipt', enabled: true, isDefault: true, meta: { days: 0 } },
     { id: 'custom', label: 'Custom', enabled: true, isDefault: true, meta: { days: null, requiresInput: true } },
   ],
-  actionFlags: [
-    { id: 'none', label: 'None', enabled: true, isDefault: true, meta: { icon: '' } },
-    { id: 'auto-paying', label: 'Auto-paying', enabled: true, isDefault: true, meta: { icon: '🔄' } },
-    { id: 'hold', label: 'Hold', enabled: true, isDefault: true, meta: { icon: '⏸' } },
-    { id: 'follow-up', label: 'Active follow-up needed', enabled: true, isDefault: true, meta: { icon: '📞' } },
-    { id: 'disputed', label: 'Disputed', enabled: true, isDefault: true, meta: { icon: '⚠️' } },
-    { id: 'awaiting-approval', label: 'Awaiting approval', enabled: true, isDefault: true, meta: { icon: '⏳' } },
-  ],
-  statuses: [
-    { id: 'pending', label: 'Pending', enabled: true, isDefault: true, meta: { color: '#b87d00' } },
-    { id: 'action-taken', label: 'Action Taken', enabled: true, isDefault: true, meta: { color: '#0369a1' } },
-    { id: 'resolved', label: 'Resolved', enabled: true, isDefault: true, meta: { color: '#15803d' } },
-    { id: 'escalated', label: 'Escalated', enabled: true, isDefault: true, meta: { color: '#c8401a' } },
-  ],
-  // For invoice-level overrides
-  invoiceFlags: [
-    { id: 'none', label: 'None', enabled: true, isDefault: true, meta: { icon: '' } },
-    { id: 'disputed', label: 'Disputed', enabled: true, isDefault: true, meta: { icon: '⚠️' } },
-    { id: 'cancelled', label: 'Cancelled (credit received)', enabled: true, isDefault: true, meta: { icon: '↩️' } },
-    { id: 'paid-manually', label: 'Paid manually', enabled: true, isDefault: true, meta: { icon: '✓' } },
-    { id: 'on-hold', label: 'On hold', enabled: true, isDefault: true, meta: { icon: '⏸' } },
-    { id: 'awaiting-docs', label: 'Awaiting documentation', enabled: true, isDefault: true, meta: { icon: '📄' } },
-  ],
   invoiceStatuses: [
     { id: 'open', label: 'Open', enabled: true, isDefault: true, meta: { color: '#374151' } },
     { id: 'action-required', label: 'Action Required', enabled: true, isDefault: true, meta: { color: '#b87d00' } },
     { id: 'resolved', label: 'Resolved', enabled: true, isDefault: true, meta: { color: '#15803d' } },
     { id: 'escalated', label: 'Escalated', enabled: true, isDefault: true, meta: { color: '#c8401a' } },
+  ],
+  // Phase 2A: Invoice-level cash-flow decisions.
+  // Sort order reflects decision urgency (most decisive → least).
+  // Auto Pay is intentionally NOT here — it lives in paymentMethods at the vendor
+  // level as a standing instruction. See Phase 2A design notes.
+  invoiceTakeActions: [
+    { id: 'none', label: 'No decision', enabled: true, isDefault: true, meta: { sortOrder: 0, description: 'No action decided yet. Default state for new invoices.', icon: '' } },
+    { id: 'full-pay', label: 'Full Pay', enabled: true, isDefault: true, meta: { sortOrder: 1, description: 'Pay the full open balance on this invoice in the current cycle.', icon: '💰' } },
+    { id: 'part-pay', label: 'Part Pay', enabled: true, isDefault: true, meta: { sortOrder: 2, description: 'Pay a specific partial amount this cycle. Requires partPaymentAmount on the invoice override. QBO remains source of truth for the executed amount.', icon: '💵', requiresAmount: true } },
+    { id: 'hold', label: 'Hold', enabled: true, isDefault: true, meta: { sortOrder: 3, description: 'Deliberately not paying this invoice yet. Cash-flow or strategic decision, not a problem with the invoice itself.', icon: '⏸' } },
+    { id: 'disputed', label: 'Disputed', enabled: true, isDefault: true, meta: { sortOrder: 4, description: 'Payment blocked because the invoice itself is contested (amount, goods/services not received, billing error). Resolution required before payment.', icon: '⚠️' } },
+    { id: 'pending-recon', label: 'Pending Reconciliation', enabled: true, isDefault: true, meta: { sortOrder: 5, description: 'Payment blocked pending internal verification — e.g., matching to PO, GR, or vendor statement reconciliation. Not a dispute; just unverified.', icon: '🔍' } },
   ],
   vendorNatures: [
     { id: 'rent', label: 'Rent', enabled: true, isDefault: true, meta: { icon: '🏢' } },
@@ -223,15 +219,77 @@ export function updateItemMeta(category, id, newMeta) {
   return true
 }
 
+// ── Phase 2A: Take-Action helpers ──────────────────────────
+// These mirror the convention used elsewhere in the codebase and centralize
+// the logic that File 4 (reconciliation) and File 10 (AI prompt) will rely on.
+
+/**
+ * Get all take-action options sorted by their meta.sortOrder.
+ * Use this when populating the Take Action dropdown.
+ */
+export function getTakeActionsSorted() {
+  const items = getEnabledItems('invoiceTakeActions')
+  return [...items].sort((a, b) => {
+    const aOrder = a.meta?.sortOrder ?? 999
+    const bOrder = b.meta?.sortOrder ?? 999
+    return aOrder - bOrder
+  })
+}
+
+/**
+ * Get a take-action option by id, with safe fallback to 'none'.
+ */
+export function getTakeActionById(id) {
+  return (
+    getItemById('invoiceTakeActions', id) ||
+    getItemById('invoiceTakeActions', 'none')
+  )
+}
+
+/**
+ * Predicate: does this takeAction represent a "decision to pay" (full or part)?
+ * Used by reconciliation logic to detect "decision not executed" — i.e., the
+ * bookkeeper said Full Pay or Part Pay last period but the open balance hasn't
+ * changed in the new upload.
+ */
+export function isPaymentDecision(takeActionId) {
+  return takeActionId === 'full-pay' || takeActionId === 'part-pay'
+}
+
+/**
+ * Predicate: does this takeAction represent a "deliberate non-payment"?
+ * (Hold / Disputed / Pending Recon — all three mean "we know about this and
+ * we're not paying yet.") Used by the AI prompt to mention pending decisions
+ * without recommending chase actions.
+ */
+export function isDeliberateNonPayment(takeActionId) {
+  return (
+    takeActionId === 'hold' ||
+    takeActionId === 'disputed' ||
+    takeActionId === 'pending-recon'
+  )
+}
+
+/**
+ * Predicate: does this vendor's payment method indicate auto-pay?
+ * Auto Pay is the union of standing-instruction and auto-debit — both behave
+ * the same way for the AI's chase-recommendation logic (skip them).
+ * Pass in vendor.paymentMethodId.
+ */
+export function isAutoPayMethod(paymentMethodId) {
+  return (
+    paymentMethodId === 'standing-instruction' ||
+    paymentMethodId === 'auto-debit'
+  )
+}
+
 // Categories exposed for UI to iterate
 export const CONFIG_CATEGORIES = [
   { key: 'paymentMethods', label: 'Payment Methods', description: 'How vendors are paid' },
   { key: 'criticalityLevels', label: 'Criticality Levels', description: 'How urgent each vendor is' },
   { key: 'vendorNatures', label: 'Vendor Nature', description: 'What the vendor provides (rent, utilities, inventory, etc.)' },
   { key: 'paymentTerms', label: 'Payment Terms', description: 'Net days for invoice due dates' },
-  { key: 'actionFlags', label: 'Vendor Action Flags', description: 'Active state of a vendor' },
-  { key: 'statuses', label: 'Vendor Statuses', description: 'Workflow status of a vendor' },
-  { key: 'invoiceFlags', label: 'Invoice Action Flags', description: 'State of individual invoices' },
   { key: 'invoiceStatuses', label: 'Invoice Statuses', description: 'Workflow status of individual invoices' },
+  { key: 'invoiceTakeActions', label: 'Invoice Take Actions', description: 'Cash-flow decisions on individual invoices (Full Pay, Part Pay, Hold, Disputed, etc.)' },
   { key: 'actionItemSettings', label: 'Action Items Settings', description: 'Defaults for reminders, dispute follow-ups, and hold expiry' },
 ]

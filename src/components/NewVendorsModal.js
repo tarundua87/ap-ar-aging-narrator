@@ -30,7 +30,7 @@ function VendorReviewRow({ vendor, draft, onChange, suggestion, sourceClientName
   const paymentMethods = getEnabledItems('paymentMethods')
   const criticalityLevels = getEnabledItems('criticalityLevels')
   const vendorNatures = getEnabledItems('vendorNatures')
-  const actionFlags = getEnabledItems('actionFlags')
+  const takeActions = getEnabledItems('invoiceTakeActions')
 
   const update = (key, value) => onChange({ ...draft, [key]: value })
 
@@ -68,6 +68,14 @@ function VendorReviewRow({ vendor, draft, onChange, suggestion, sourceClientName
       <td className="px-3 py-3 align-top" style={{ minWidth: '160px' }}>
         <InlineSelect value={draft.paymentMethodId} onChange={(v) => update('paymentMethodId', v)} options={paymentMethods} />
       </td>
+      <td className="px-3 py-3 align-top" style={{ minWidth: '170px' }}>
+        <InlineSelect
+          value={draft.defaultTakeActionId || 'none'}
+          onChange={(v) => update('defaultTakeActionId', v)}
+          options={takeActions}
+          withIcons
+        />
+      </td>
       <td className="px-3 py-3 align-top" style={{ minWidth: '140px' }}>
         <InlineSelect value={draft.criticalityId} onChange={(v) => update('criticalityId', v)} options={criticalityLevels} />
       </td>
@@ -82,8 +90,14 @@ function VendorReviewRow({ vendor, draft, onChange, suggestion, sourceClientName
           style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }}
         />
       </td>
-      <td className="px-3 py-3 align-top" style={{ minWidth: '180px' }}>
-        <InlineSelect value={draft.actionFlagId} onChange={(v) => update('actionFlagId', v)} options={actionFlags} withIcons />
+      <td className="px-3 py-3 align-top text-center" style={{ minWidth: '70px' }}>
+        <input
+          type="checkbox"
+          checked={!!draft.isFlagged}
+          onChange={(e) => update('isFlagged', e.target.checked)}
+          title="Mark for attention — explain in note"
+          style={{ width: '16px', height: '16px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+        />
       </td>
       <td className="px-3 py-3 align-top" style={{ minWidth: '160px' }}>
         <input
@@ -175,7 +189,7 @@ export default function NewVendorsModal({
         {/* Intro tip */}
         <div className="px-6 py-3" style={{ background: '#fffbeb', borderBottom: '1px solid var(--border)' }}>
           <p className="text-xs" style={{ color: '#78350f' }}>
-            <strong>Why this matters:</strong> Setting the payment method and criticality lets the AI write practical narratives —
+            <strong>Why this matters:</strong> Setting the payment method, criticality, and default take-action lets the AI write practical narratives —
             it won't tell you to "urgently pay" a vendor that's on standing instructions, or de-prioritize rent.
           </p>
         </div>
@@ -184,15 +198,16 @@ export default function NewVendorsModal({
         <div className="px-6 py-5" style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
           <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
             <div style={{ overflowX: 'auto' }}>
-            <table className="w-full text-xs" style={{ minWidth: '1100px' }}>
+            <table className="w-full text-xs" style={{ minWidth: '1180px' }}>
                 <thead style={{ background: 'var(--ink)' }}>
                   <tr>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)', minWidth: '240px' }}>Vendor</th>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Payment Method</th>
+                    <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Default Take Action</th>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Criticality</th>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Nature</th>
                     <th className="text-center px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>1099</th>
-                    <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Action Flag</th>
+                    <th className="text-center px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Flagged</th>
                     <th className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--paper)' }}>Quick Note</th>
                   </tr>
                 </thead>

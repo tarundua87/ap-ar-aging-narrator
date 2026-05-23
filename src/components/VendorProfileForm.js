@@ -52,8 +52,7 @@ export default function VendorProfileForm({
   const criticalityLevels = getEnabledItems('criticalityLevels')
   const vendorNatures = getEnabledItems('vendorNatures')
   const paymentTerms = getEnabledItems('paymentTerms')
-  const actionFlags = getEnabledItems('actionFlags')
-  const statuses = getEnabledItems('statuses')
+  const takeActions = getEnabledItems('invoiceTakeActions')
 
   const update = (key, value) => setProfile(p => ({ ...p, [key]: value }))
 
@@ -107,36 +106,23 @@ export default function VendorProfileForm({
       )}
 
       {/* Two-column grid on wider screens */}
-      {/* Two-column grid on wider screens */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5">
+        {/* Payment cluster — three related payment-decision dropdowns sit together */}
         <Field label="Payment Method" hint="How this vendor is typically paid">
           <Select value={profile.paymentMethodId} onChange={(v) => update('paymentMethodId', v)} options={paymentMethods} />
         </Field>
 
-        <Field label="Criticality" hint="How urgent is this vendor">
-          <Select value={profile.criticalityId} onChange={(v) => update('criticalityId', v)} options={criticalityLevels} />
-        </Field>
-
-        <Field label="Vendor Nature" hint="What this vendor provides">
-          <Select value={profile.natureId || 'other'} onChange={(v) => update('natureId', v)} options={vendorNatures} withMeta />
-        </Field>
-
-        <Field label="1099 Eligible" hint="US tax reporting eligibility">
-          <label className="flex items-center gap-2 cursor-pointer" style={{ padding: '8px 0' }}>
-            <input
-              type="checkbox"
-              checked={!!profile.is1099Eligible}
-              onChange={(e) => update('is1099Eligible', e.target.checked)}
-              style={{ width: '18px', height: '18px', accentColor: 'var(--accent)', cursor: 'pointer' }}
-            />
-            <span className="text-sm" style={{ color: 'var(--ink)' }}>
-              {profile.is1099Eligible ? 'Yes — eligible for 1099' : 'No — not eligible'}
-            </span>
-          </label>
-        </Field>
-
         <Field label="Payment Terms" hint="Override the invoice due date logic">
           <Select value={profile.paymentTermsId} onChange={(v) => update('paymentTermsId', v)} options={paymentTerms} />
+        </Field>
+
+        <Field label="Default Take Action" hint="Auto-applied to new invoices for this vendor on next upload">
+          <Select
+            value={profile.defaultTakeActionId || 'none'}
+            onChange={(v) => update('defaultTakeActionId', v)}
+            options={takeActions}
+            withMeta
+          />
         </Field>
 
         {isCustomTerms && (
@@ -153,12 +139,42 @@ export default function VendorProfileForm({
           </Field>
         )}
 
-        <Field label="Action Flag" hint="Current state of this vendor">
-          <Select value={profile.actionFlagId} onChange={(v) => update('actionFlagId', v)} options={actionFlags} withMeta />
+        {/* Vendor characteristics */}
+        <Field label="Criticality" hint="How urgent is this vendor">
+          <Select value={profile.criticalityId} onChange={(v) => update('criticalityId', v)} options={criticalityLevels} />
         </Field>
 
-        <Field label="Status" hint="Workflow state">
-          <Select value={profile.statusId} onChange={(v) => update('statusId', v)} options={statuses} />
+        <Field label="Vendor Nature" hint="What this vendor provides">
+          <Select value={profile.natureId || 'other'} onChange={(v) => update('natureId', v)} options={vendorNatures} withMeta />
+        </Field>
+
+        {/* Boolean flags — checkbox cluster */}
+        <Field label="1099 Eligible" hint="US tax reporting eligibility">
+          <label className="flex items-center gap-2 cursor-pointer" style={{ padding: '8px 0' }}>
+            <input
+              type="checkbox"
+              checked={!!profile.is1099Eligible}
+              onChange={(e) => update('is1099Eligible', e.target.checked)}
+              style={{ width: '18px', height: '18px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+            />
+            <span className="text-sm" style={{ color: 'var(--ink)' }}>
+              {profile.is1099Eligible ? 'Yes — eligible for 1099' : 'No — not eligible'}
+            </span>
+          </label>
+        </Field>
+
+        <Field label="Flagged" hint="Mark this vendor for attention — explain why in Notes">
+          <label className="flex items-center gap-2 cursor-pointer" style={{ padding: '8px 0' }}>
+            <input
+              type="checkbox"
+              checked={!!profile.isFlagged}
+              onChange={(e) => update('isFlagged', e.target.checked)}
+              style={{ width: '18px', height: '18px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+            />
+            <span className="text-sm" style={{ color: 'var(--ink)' }}>
+              {profile.isFlagged ? '🚩 Flagged for attention' : 'Not flagged'}
+            </span>
+          </label>
         </Field>
 
         <Field label="Reminder Date" hint="When to follow up next">
@@ -172,7 +188,7 @@ export default function VendorProfileForm({
         </Field>
       </div>
 
-      <Field label="Notes" hint="Internal context — disputes, history, special instructions">
+      <Field label="Notes" hint="Internal context — disputes, history, special instructions, reason for flag">
         <textarea
           value={profile.notes || ''}
           onChange={(e) => update('notes', e.target.value)}

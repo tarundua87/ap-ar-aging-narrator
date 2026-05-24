@@ -16,6 +16,7 @@ import {
   listClients, getClient, getLatestReport, getReport,
   saveReport, saveVendorNarrative, saveClientNarrative,
   deleteClient, deleteReport,
+  getPreviousReport, saveReconciliationFindings,
 } from '../lib/storage'
 import { exportReportPDF, exportVendorPDF } from '../lib/exportPDF'
 import { exportReportWord, exportVendorWord } from '../lib/exportWord'
@@ -25,12 +26,123 @@ import {
   describeProfile, describeInvoiceOverride,
   autoSuggestProfile,
 } from '../lib/vendorProfiles'
+import { computeReconciliationFindings } from '../lib/reconciliation'
 
 const VIEW_LIBRARY = 'library'
 const VIEW_UPLOAD = 'upload'
 const VIEW_UPLOAD_SCOPED = 'upload_scoped'
 const VIEW_REPORT = 'report'
 const VIEW_ALL_ACTION_ITEMS = 'all_action_items'
+
+function fmt(n) {
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Inline banner showing unexecuted-decision findings from the previous period.
+// Appears above ClientSummary when reconciliationFindings has entries.
+// Dismissible per-session via in-memory state (refresh restores it).
+function ReconciliationBanner({ findings, dismissed, onDismiss, onJumpToConfigure }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!findings || !findings.unexecutedDecisions || findings.unexecutedDecisions.length === 0) return null
+  if (dismissed) return null
+
+  const decisions = findings.unexecutedDecisions
+  const totalUnexecuted = decisions.reduce((sum, d) => sum + (Number(d.unexecutedAmount) || 0), 0)
+  const vendorsAffected = new Set(decisions.map(d => d.vendorName)).size
+
+  return (
+    <div
+      className="mb-4 rounded-xl overflow-hidden"
+      style={{ background: '#faf9f7', border: '1px solid var(--border)' }}
+    >
+      <div className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs uppercase tracking-widest mb-0.5" style={{ color: 'var(--muted)' }}>
+            Reconciliation — Prior Period Review
+          </p>
+          <p className="text-sm" style={{ color: 'var(--ink)' }}>
+            <strong>{decisions.length}</strong> pay decision{decisions.length !== 1 ? 's' : ''} from
+            <strong> {findings.previousAsOfDate}</strong> not executed.
+            Total unexecuted: <strong>{fmt(totalUnexecuted)}</strong> across {vendorsAffected} vendor{vendorsAffected !== 1 ? 's' : ''}.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs px-3 py-1.5 rounded transition-all"
+            style={{ background: 'var(--ink)', color: 'var(--paper)', fontWeight: 500 }}
+          >
+            {expanded ? 'Hide details' : 'View details'}
+          </button>
+          <button
+            onClick={onDismiss}
+            title="Dismiss for this session"
+            className="text-xs px-2 py-1.5 rounded transition-all"
+            style={{ color: 'var(--muted)', background: 'transparent', border: '1px solid var(--border)' }}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="px-5 py-3" style={{ borderTop: '1px solid var(--border)', background: 'white' }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                <th className="text-left px-2 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Vendor</th>
+                <th className="text-left px-2 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Invoice #</th>
+                <th className="text-left px-2 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Prior Decision</th>
+                <th className="text-right px-2 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Previous Balance</th>
+                <th className="text-right px-2 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Current Balance</th>
+                <th className="text-right px-2 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Unexecuted</th>
+                <th className="text-left px-2 py-2 font-semibold" style={{ color: 'var(--muted)' }}>Prior Reminder</th>
+                <th className="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {decisions.map((d, idx) => {
+                const actionLabel = d.previousTakeAction === 'full-pay'
+                  ? 'Full Pay'
+                  : `Part Pay${d.previousIntendedAmount ? ` (${fmt(d.previousIntendedAmount)})` : ''}`
+                return (
+                  <tr key={idx} style={{ borderBottom: idx < decisions.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <td className="px-2 py-2" style={{ color: 'var(--ink)' }}>{d.vendorName}</td>
+                    <td className="px-2 py-2 font-medium">{d.invoiceNumber}</td>
+                    <td className="px-2 py-2">{actionLabel}</td>
+                    <td className="px-2 py-2 text-right">{fmt(d.previousOpenBalance)}</td>
+                    <td className="px-2 py-2 text-right">{fmt(d.currentOpenBalance)}</td>
+                    <td className="px-2 py-2 text-right font-semibold" style={{ color: 'var(--ink)' }}>{fmt(d.unexecutedAmount)}</td>
+                    <td className="px-2 py-2" style={{ color: 'var(--muted)' }}>{d.previousReminderDate || '—'}</td>
+                    <td className="px-2 py-2 text-right">
+                      <button
+                        onClick={() => onJumpToConfigure(d.vendorName)}
+                        className="text-xs px-2 py-1 rounded transition-all"
+                        style={{ color: 'var(--accent)', border: '1px solid var(--border)' }}
+                      >
+                        Review
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {decisions.some(d => d.previousNotes) && (
+            <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+              <p className="text-xs font-semibold mb-1" style={{ color: 'var(--muted)' }}>Prior period notes:</p>
+              {decisions.filter(d => d.previousNotes).map((d, i) => (
+                <p key={i} className="text-xs mt-0.5" style={{ color: 'var(--ink)' }}>
+                  <strong>{d.vendorName} · {d.invoiceNumber}:</strong> {d.previousNotes}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Dashboard() {
   // Current view
@@ -58,6 +170,9 @@ export default function Dashboard() {
 
   // Draft email regeneration state (for the Draft Email tab fallback)
   const [regeneratingEmail, setRegeneratingEmail] = useState(false)
+
+  // Reconciliation banner — per-session dismiss state, keyed by reportId
+  const [dismissedReconBanners, setDismissedReconBanners] = useState({})
 
   // Modal states
   const [showMasterConfig, setShowMasterConfig] = useState(false)
@@ -187,7 +302,7 @@ export default function Dashboard() {
     refreshLibrary()
   }
 
-  // ── Upload action with new-vendor review ─────────
+  // ── Upload action with new-vendor review + reconciliation ─────────
 
   const handleDataLoaded = async (parsedResult) => {
     const { clientName, asOfDate, vendors, aggregate, invoiceCount, rawCsv } = parsedResult
@@ -199,6 +314,27 @@ export default function Dashboard() {
       clientNarrative: null,
       rawCsv,
     })
+
+    // PHASE 2A — run cross-period reconciliation against the previous period
+    // (if one exists). Computes which Full Pay / Part Pay decisions from the
+    // prior upload were not executed in this one.
+    try {
+      const previousReport = getPreviousReport(saveResult.slug, saveResult.reportId)
+      if (previousReport) {
+        const previousOverrides = getInvoiceOverrides(saveResult.slug, previousReport.id)
+        const findings = computeReconciliationFindings({
+          previousReport,
+          previousInvoiceOverrides: previousOverrides,
+          currentParsedData: { vendors, aggregate, invoiceCount },
+        })
+        if (findings) {
+          saveReconciliationFindings(saveResult.slug, saveResult.reportId, findings)
+        }
+      }
+    } catch (err) {
+      console.error('Reconciliation computation failed', err)
+      // Don't block the upload flow if reconciliation has an issue.
+    }
 
     const justSaved = getReport(saveResult.slug, saveResult.reportId)
     setActiveSlug(saveResult.slug)
@@ -248,6 +384,9 @@ export default function Dashboard() {
     setLoadingClient(true)
     try {
       const ctx = buildPromptContext()
+      // Pull reconciliation findings from the freshest copy of the report
+      const fresh = getReport(slug, reportId)
+      const reconciliationFindings = fresh?.reconciliationFindings || null
       const res = await fetch('/api/generate-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -258,6 +397,7 @@ export default function Dashboard() {
           aggregate,
           vendorProfiles: ctx.vendorProfiles,
           invoiceOverrides: ctx.invoiceOverrides,
+          reconciliationFindings,
         }),
       })
       const data = await res.json()
@@ -276,6 +416,8 @@ export default function Dashboard() {
     setVendorNarrative(null)
     try {
       const ctx = buildPromptContext()
+      const fresh = getReport(activeSlug, activeReportId)
+      const reconciliationFindings = fresh?.reconciliationFindings || null
       const res = await fetch('/api/generate-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -285,6 +427,7 @@ export default function Dashboard() {
           vendor,
           vendorProfiles: ctx.vendorProfiles,
           invoiceOverrides: ctx.invoiceOverrides,
+          reconciliationFindings,
         }),
       })
       const data = await res.json()
@@ -302,6 +445,8 @@ export default function Dashboard() {
   const generateVendorNarrativeSilent = async (vendor) => {
     try {
       const ctx = buildPromptContext()
+      const fresh = getReport(activeSlug, activeReportId)
+      const reconciliationFindings = fresh?.reconciliationFindings || null
       const res = await fetch('/api/generate-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -311,6 +456,7 @@ export default function Dashboard() {
           vendor,
           vendorProfiles: ctx.vendorProfiles,
           invoiceOverrides: ctx.invoiceOverrides,
+          reconciliationFindings,
         }),
       })
       const data = await res.json()
@@ -398,16 +544,13 @@ export default function Dashboard() {
   }
 
   // Regenerate draft email as a fallback when extraction fails.
-  // Calls the AI to produce just the draft section, then merges it into the narrative.
   const handleRegenerateDraftEmail = async () => {
     if (!activeReport) return
     setRegeneratingEmail(true)
     try {
       if (selectedVendor) {
-        // Vendor mode — regenerate the full vendor narrative (it includes the draft email)
         await generateVendorNarrative(selectedVendor)
       } else {
-        // Client mode — regenerate the full client narrative
         const { vendors, aggregate } = activeReport.parsedData
         await generateClientNarrative(activeSlug, activeReportId, getClient(activeSlug).displayName, vendors, aggregate)
       }
@@ -416,7 +559,7 @@ export default function Dashboard() {
     }
   }
 
-  // Quick-edit a single vendor from the triage queue
+  // Quick-edit a single vendor from the triage queue or banner
   const handleConfigureVendor = (vendorName) => {
     setQuickEditVendor(vendorName)
   }
@@ -426,6 +569,21 @@ export default function Dashboard() {
     saveVendorProfile(activeSlug, quickEditVendor, profile)
     setQuickEditVendor(null)
     bumpProfiles()
+  }
+
+  // Banner: jump to the Configure Vendors panel scoped to a vendor
+  const handleBannerJumpToConfigure = (vendorName) => {
+    setShowVendorSettings(true)
+    // Note: VendorSettingsPanel will show all vendors; bookkeeper can find
+    // the specific vendor in the list. Deep-link to specific vendor is a
+    // Phase 2B enhancement.
+  }
+
+  // Banner: dismiss for this session (keyed by reportId so each report has
+  // its own dismissal state)
+  const handleDismissReconBanner = () => {
+    if (!activeReportId) return
+    setDismissedReconBanners(prev => ({ ...prev, [activeReportId]: true }))
   }
 
   // ── Export handlers ──────────────────────────────
@@ -570,6 +728,13 @@ export default function Dashboard() {
 
           {view === VIEW_REPORT && activeReport && (
             <>
+              <ReconciliationBanner
+                findings={activeReport.reconciliationFindings}
+                dismissed={!!dismissedReconBanners[activeReportId]}
+                onDismiss={handleDismissReconBanner}
+                onJumpToConfigure={handleBannerJumpToConfigure}
+              />
+
               <ClientSummary
                 clientName={getClient(activeSlug)?.displayName || 'Client'}
                 asOfDate={activeReport.asOfDate}

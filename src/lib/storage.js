@@ -148,6 +148,33 @@ export function saveClientNarrative(slug, reportId, narrative) {
   return writeAll(all)
 }
 
+// Find the report immediately before the given report (by uploadedAt).
+// Used by reconciliation to compare a new upload against the prior period.
+// Returns null if there's no earlier report.
+export function getPreviousReport(slug, currentReportId) {
+  const client = getClient(slug)
+  if (!client || !client.reports || client.reports.length < 2) return null
+  const current = client.reports.find(r => r.id === currentReportId)
+  if (!current) return null
+  const currentUploadedAt = new Date(current.uploadedAt).getTime()
+  // All reports earlier than the current one, sorted newest first
+  const earlier = client.reports
+    .filter(r => r.id !== currentReportId && new Date(r.uploadedAt).getTime() < currentUploadedAt)
+    .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
+  return earlier[0] || null
+}
+
+// Save reconciliation findings onto a report. Called after upload completes.
+// Findings can be null (no previous period to compare against).
+export function saveReconciliationFindings(slug, reportId, findings) {
+  const all = readAll()
+  if (!all[slug]) return false
+  const report = all[slug].reports.find(r => r.id === reportId)
+  if (!report) return false
+  report.reconciliationFindings = findings
+  return writeAll(all)
+}
+
 export function deleteReport(slug, reportId) {
   const all = readAll()
   if (!all[slug]) return false
